@@ -14,6 +14,7 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+  Patient       Patient?
 
   @@unique([email])
   @@map("user")
@@ -29,7 +30,6 @@ model Session {
   userAgent String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([token])
   @@index([userId])
   @@map("session")

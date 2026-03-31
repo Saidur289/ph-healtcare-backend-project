@@ -1,10 +1,13 @@
 import express, { Request, Response } from 'express';
 import { IndexRoutes } from './app/routes';
+import { notFound } from './app/middleware/notFound';
+
 
 const app = express();
-const port = process.env.PORT || 3000;
+
 app.use(express.json())
 app.use("/api/v1", IndexRoutes)
+app.use(notFound)
 app.get('/', (req: Request, res: Response) => {
     res.send('Hello, TypeScript Express!');
 });
