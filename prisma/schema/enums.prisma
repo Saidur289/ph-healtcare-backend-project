@@ -9,3 +9,7 @@ enum UserStatus{
     DELETED
     ACTIVE
 }
+enum Gender{
+    MALE
+    FEMALE
+}
