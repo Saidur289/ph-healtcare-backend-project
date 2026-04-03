@@ -3,6 +3,8 @@ import { Role, Specialty } from "../../../generated/prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ICreateDoctorPayload } from "./user.interface";
 import { auth } from "../../lib/auth";
+import AppError from "../../errorHelpers/AppError";
+import { StatusCodes } from "http-status-codes";
 
 
 const createDoctor = async (payload: ICreateDoctorPayload) => {
@@ -24,7 +26,7 @@ const createDoctor = async (payload: ICreateDoctorPayload) => {
         }
     });
     if (userExists) {
-        throw new Error("User with this email already exists");
+        throw new AppError(StatusCodes.BAD_REQUEST, "User with this email already exists");
     }
     const userData = await auth.api.signUpEmail({
         body: {
@@ -55,7 +57,7 @@ const createDoctor = async (payload: ICreateDoctorPayload) => {
             })
             const data = await tx.doctor.findUnique({
                 where: {
-                    id: userData.user.id
+                    id: doctorData.id
                 },
                 select: {
                     id: true,
@@ -100,8 +102,10 @@ const createDoctor = async (payload: ICreateDoctorPayload) => {
                 }
 
             })
+
             return data
         })
+
         return doctor
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {

@@ -6,5 +6,5 @@ import { UserRoutes } from "../modules/user/user.route";
 const router = Router()
 router.use("/specialties", SpecialtyRoutes)
 router.use("/auth", AuthRoutes)
-router.use("/users", UserRoutes)
+router.use("/user", UserRoutes)
 export const IndexRoutes = router

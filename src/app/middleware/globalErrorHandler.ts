@@ -60,6 +60,7 @@ const globalErrorHandler = (
         stack: envVars.NODE_ENV === "development" ? stack : undefined,
         error: envVars.NODE_ENV === "development" ? err : undefined
     }
+
     res.status(statusCode).json(errorResponse);
 
 }
