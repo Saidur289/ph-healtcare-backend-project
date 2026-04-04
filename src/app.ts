@@ -2,12 +2,14 @@ import express, { Request, Response } from 'express';
 import { IndexRoutes } from './app/routes';
 import { notFound } from './app/middleware/notFound';
 import globalErrorHandler from './app/middleware/globalErrorHandler';
+import cookieParser from 'cookie-parser';
 
 
 
 const app = express();
 
 app.use(express.json())
+app.use(cookieParser())
 app.use("/api/v1", IndexRoutes)
 app.use(notFound)
 

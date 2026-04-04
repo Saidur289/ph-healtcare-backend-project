@@ -10,6 +10,7 @@ import { envVars } from "../config/env";
 export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Response, next: NextFunction) => {
     try {
         const sessionToken = CookieUtils.getCookie(req, "betterAuthSessionToken");
+        console.log(sessionToken);
         if (!sessionToken) {
             throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
         }

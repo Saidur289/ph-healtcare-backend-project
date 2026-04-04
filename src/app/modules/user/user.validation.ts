@@ -1,7 +1,7 @@
 import z from "zod";
 import { Gender } from "../../../generated/prisma/enums";
 
-export const createDoctorZodSchema = z.object({
+const createDoctorZodSchema = z.object({
     password: z.string().min(6, "Password must be at least 6 characters long").max(20, "Password must be at most 20 characters long"),
     doctor: z.object({
         name: z.string("Name is required").min(5, "Name must be at least 5 characters long").max(30, "Name must be less than 30 characters"),
@@ -18,3 +18,28 @@ export const createDoctorZodSchema = z.object({
     }),
     specialties: z.array(z.uuid(), "Specialties must be an array of UUIDs")
 })
+const createAdminValidationSchema = z.object({
+    password: z.string().min(6, "Password must be at least 6 characters long").max(20, "Password must be at most 20 characters long"),
+    admin: z.object({
+        name: z.string("Name is required").min(5, "Name must be at least 5 characters long").max(30, "Name must be less than 30 characters"),
+        email: z.email("Email is required"),
+        contactNumber: z.string("Contact number is required").min(11, "Contact number must be at least 11 characters long").max(14, "Contact number must be less than 14 characters").optional(),
+        profilePhoto: z.string("Profile photo is required").optional(),
+    })
+
+})
+const createSuperAdminValidationSchema = z.object({
+    password: z.string().min(6, "Password must be at least 6 characters long").max(20, "Password must be at most 20 characters long"),
+    superAdmin: z.object({
+        name: z.string("Name is required").min(5, "Name must be at least 5 characters long").max(30, "Name must be less than 30 characters"),
+        email: z.email("Email is required"),
+        contactNumber: z.string("Contact number is required").min(11, "Contact number must be at least 11 characters long").max(14, "Contact number must be less than 14 characters").optional(),
+        profilePhoto: z.string("Profile photo is required").optional(),
+    })
+})
+
+export const UserValidation = {
+    createDoctorZodSchema,
+    createAdminValidationSchema,
+    createSuperAdminValidationSchema
+}

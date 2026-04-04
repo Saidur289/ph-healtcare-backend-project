@@ -25,3 +25,35 @@ model Doctor{
     @@index([isDeleted], name: "idx_doctor_isDeleted")
     @@map("doctor")
 }
+model Admin{
+    id String @id @default(uuid(7))
+    name String
+    email String @unique
+    contactNumber String?
+    profilePhoto String?
+    isDeleted Boolean @default(false)
+    deletedAt DateTime?
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+    // relation 
+    userId String @unique
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+     @@index([email], name: "idx_admin_email")
+     @@map("admin")
+}
+model SuperAdmin{
+    id String @id @default(uuid(7))
+    name String
+    email String @unique
+    contactNumber String?
+    profilePhoto String?
+    isDeleted Boolean @default(false)
+    deletedAt DateTime?
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+    // relation 
+    userId String @unique
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+     @@index([email], name: "idx_super_admin_email")
+     @@map("super_admin")
+}

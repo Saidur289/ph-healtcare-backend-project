@@ -44,4 +44,22 @@ export interface ICreateDoctorPayload {
     },
     specialties: string[]
 }
+export interface ICreateAdmin {
+    password: string,
+    admin: {
+        name: string,
+        email: string,
+        contactNumber?: string,
+        profilePhoto?: string,
+    }
+}
+export interface ICreateSuperAdmin {
+    password: string,
+    superAdmin: {
+        name: string,
+        email: string,
+        contactNumber?: string,
+        profilePhoto?: string,
+    }
+}
 

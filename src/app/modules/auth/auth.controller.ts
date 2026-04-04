@@ -8,7 +8,7 @@ const registerPatient = catchAsync(async (req: Request, res: Response) => {
     const payload = req.body;
     const result = await AuthService.registerPatient(payload)
     const { accessToken, token, refreshToken, ...rest } = result
-    console.log(result);
+    // console.log(result);
     TokenUtils.setAccessTokenCookie(res, accessToken)
     TokenUtils.setRefreshTokenCookie(res, refreshToken)
     TokenUtils.setBetterAuthCookie(res, token as string)
