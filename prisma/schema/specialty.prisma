@@ -14,13 +14,14 @@ model Specialty{
 
 }
 model DoctorSpecialty {
+    id          String @id @default(uuid(7))
     doctorId String
     specialtyId String
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
-    doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-    specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+    doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade, onUpdate: Cascade )
     @@unique([doctorId, specialtyId], name: "unique_doctor_specialty")
     @@index([doctorId], name: "idx_doctor_specialty_doctorId")
     @@index([specialtyId], name: "idx_doctor_specialty_specialtyId")
