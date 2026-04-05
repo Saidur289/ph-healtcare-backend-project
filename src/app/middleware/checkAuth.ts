@@ -12,7 +12,7 @@ export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Res
         const sessionToken = CookieUtils.getCookie(req, "betterAuthSessionToken");
         console.log(sessionToken);
         if (!sessionToken) {
-            throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
+            throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized - No session token provided");
         }
         if (sessionToken) {
             const sessionExists = await prisma.session.findFirst({
@@ -29,6 +29,7 @@ export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Res
             })
             if (sessionExists) {
                 const user = sessionExists.user;
+                console.log(user, "hello user");
                 const now = new Date();
                 const expiresAt = new Date(sessionExists.expiresAt);
                 const createdAt = new Date(sessionExists.createdAt);
@@ -43,29 +44,32 @@ export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Res
                 }
 
                 if (user.status === UserStatus.BLOCKED || user.status === UserStatus.DELETED) {
-                    throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
+                    throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized - User is blocked or deleted");
                 }
                 if (user.isDeleted) {
-                    throw new AppError(StatusCodes.FORBIDDEN, "Forbidden")
+                    throw new AppError(StatusCodes.FORBIDDEN, "Forbidden - User is deleted");
                 }
                 if (authRoles.length > 0 && !authRoles.includes(user.role)) {
-                    throw new AppError(StatusCodes.FORBIDDEN, "Forbidden")
+                    throw new AppError(StatusCodes.FORBIDDEN, "Forbidden - User does not have the required role");
                 }
-            }
-
-            const accessToken = CookieUtils.getCookie(req, "accessToken");
-            if (!accessToken) {
-                throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
-            }
-            const verifyToken = JwtUtils.verifyToken(accessToken, envVars.ACCESS_TOKEN_SECRET as string)
-            if (!verifyToken.success) {
-                throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
-            }
-            if (authRoles.length > 0 && !authRoles.includes(verifyToken.data.role as Role)) {
-                throw new AppError(StatusCodes.FORBIDDEN, "Forbidden")
             }
 
         }
+        const accessToken = CookieUtils.getCookie(req, "accessToken");
+
+        if (!accessToken) {
+            throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
+        }
+        const verifyToken = JwtUtils.verifyToken(accessToken, envVars.ACCESS_TOKEN_SECRET as string)
+
+        const { role } = verifyToken as { role: Role }
+        if (!verifyToken) {
+            throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized - Invalid token")
+        }
+        if (authRoles.length > 0 && !authRoles.includes(role as Role)) {
+            throw new AppError(StatusCodes.FORBIDDEN, "Forbidden - User does not have the required role")
+        }
+
         next();
     } catch (error) {
         next(error);
