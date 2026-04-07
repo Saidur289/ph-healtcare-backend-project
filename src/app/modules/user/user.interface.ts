@@ -51,7 +51,8 @@ export interface ICreateAdmin {
         email: string,
         contactNumber?: string,
         profilePhoto?: string,
-    }
+    },
+    role: "ADMIN" | "SUPER_ADMIN"
 }
 export interface ICreateSuperAdmin {
     password: string,

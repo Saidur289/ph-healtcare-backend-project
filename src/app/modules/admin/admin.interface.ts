@@ -1,6 +1,8 @@
-export interface IUpdateAdmin {
-    name?: string;
-    profilePhoto?: string;
-    contactNumber?: string;
+export interface IUpdateAdminPayload {
+    admin?: {
+        name?: string;
+        profilePhoto?: string;
+        contactNumber?: string;
 
+    }
 }

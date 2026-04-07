@@ -1,7 +1,9 @@
 import { StatusCodes } from "http-status-codes"
 import AppError from "../../errorHelpers/AppError"
 import { prisma } from "../../lib/prisma"
-import { IUpdateAdmin } from "./admin.interface"
+import { IUpdateAdminPayload } from "./admin.interface"
+import { IRequestUser } from "../../interface/requestUser.interface"
+import { UserStatus } from "../../../generated/prisma/enums"
 
 const getAllAdmin = async () => {
     const result = await prisma.admin.findMany({
@@ -45,9 +47,9 @@ const getAdminById = async (adminId: string) => {
     }
     return admin
 }
-const updateAdmin = async (adminId: string, payload: IUpdateAdmin) => {
+const updateAdmin = async (adminId: string, payload: IUpdateAdminPayload) => {
     // check if admin exists
-    const admin = await prisma.admin.findFirst({
+    const isAdminExists = await prisma.admin.findFirst({
         where: {
             id: adminId,
             isDeleted: false
@@ -56,16 +58,16 @@ const updateAdmin = async (adminId: string, payload: IUpdateAdmin) => {
 
 
     })
-    if (!admin) {
+    if (!isAdminExists) {
         throw new AppError(StatusCodes.NOT_FOUND, "admin not found")
     }
-
+    const { admin } = payload
     // update admin data
     const updatedAdmin = await prisma.admin.update({
         where: {
             id: adminId
         },
-        data: payload,
+        data: { ...admin },
 
     })
 
@@ -73,7 +75,7 @@ const updateAdmin = async (adminId: string, payload: IUpdateAdmin) => {
 
     return updatedAdmin
 }
-const deleteAdmin = async (adminId: string) => {
+const deleteAdmin = async (adminId: string, user: IRequestUser) => {
     const existsAdmin = await prisma.admin.findUnique({
         where: {
             id: adminId
@@ -85,17 +87,35 @@ const deleteAdmin = async (adminId: string) => {
     if (existsAdmin.isDeleted) {
         throw new Error("admin is already deleted")
     }
-    const deleteAdmin = await prisma.admin.update({
-        where: {
-            id: adminId,
-            isDeleted: false
-        },
-        data: {
-            isDeleted: true,
-            deletedAt: new Date()
-        }
+    if (existsAdmin.id === user.userId) {
+        throw new AppError(StatusCodes.BAD_REQUEST, "You cannot delete yourself")
+    }
+    const result = await prisma.$transaction(async (tx) => {
+        await tx.admin.update({
+            where: {
+                id: adminId
+            },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date()
+            }
+        })
+        await tx.user.update({
+            where: { id: existsAdmin.id },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date(),
+                status: UserStatus.DELETED
+            }
+        })
+        await tx.session.deleteMany({
+            where: { userId: existsAdmin.userId }
+        })
+        const admin = await getAdminById(adminId)
+        return admin
+
     })
-    return deleteAdmin
+    return result
 }
 export const AdminService = {
     getAllAdmin,

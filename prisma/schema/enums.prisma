@@ -12,4 +12,33 @@ enum UserStatus{
 enum Gender{
     MALE
     FEMALE
+    OTHER
+}
+enum AppointmentStatus {
+  SCHEDULED
+  ONPROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+}
+enum BloodGroup {
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
+}
+
+enum MaritalStatus {
+  MARRIED
+  UNMARRIED
+  DIVORCED
+  WIDOWED
 }

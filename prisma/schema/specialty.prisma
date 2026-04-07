@@ -1,5 +1,5 @@
 model Specialty{
-    id  String @id @default(uuid(7))
+    id  String @id @default(uuid())
     title String @unique @db.VarChar(100)
     description String? @db.Text
     icon String? @db.VarChar(255)
@@ -14,8 +14,8 @@ model Specialty{
 
 }
 model DoctorSpecialty {
-    id          String @id @default(uuid(7))
-    doctorId String
+    id          String @id @default(uuid())
+    doctorId String 
     specialtyId String
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt

@@ -12,36 +12,19 @@ const getAllDoctors = async () => {
         orderBy: {
             createdAt: "desc"
         },
-        select: {
-            id: true,
-            name: true,
-            email: true,
-            profilePhoto: true,
-            designation: true,
-            currentWorkplace: true,
-            registrationNumber: true,
-            appointmentFee: true,
-            averageRating: true,
+        include: {
+            user: true,
             specialties: {
-                select: {
-                    specialty: {
-                        select: {
-                            id: true,
-                            title: true
-                        }
-                    }
+                include: {
+                    specialty: true
                 }
             }
         }
     })
 
-    const doctors = result.map(doctor => ({
-        ...doctor,
-        specialties: doctor.specialties.map(s => s.specialty)
-    })
-    )
 
-    return doctors
+
+    return result
 
 
 }
@@ -52,16 +35,12 @@ const getDoctorById = async (doctorId: string) => {
             isDeleted: false
         },
         include: {
+            user: true,
             specialties: {
-                select: {
-                    specialty: {
-                        select: {
-                            id: true,
-                            title: true
-                        }
-                    }
-                }
-            }
+                include: {
+                    specialty: true,
+                },
+            },
         }
     })
     if (!doctor) {
@@ -74,7 +53,7 @@ const getDoctorById = async (doctorId: string) => {
 }
 const updateDoctor = async (doctorId: string, payload: IUpdateDoctor) => {
     // check if doctor exists
-    const doctor = await prisma.doctor.findFirst({
+    const isDoctorExists = await prisma.doctor.findFirst({
         where: {
             id: doctorId,
             isDeleted: false
@@ -89,7 +68,7 @@ const updateDoctor = async (doctorId: string, payload: IUpdateDoctor) => {
         }
 
     })
-    if (!doctor) {
+    if (!isDoctorExists) {
         throw new AppError(StatusCodes.NOT_FOUND, "Doctor not found")
     }
     const { specialties, ...doctorData } = payload

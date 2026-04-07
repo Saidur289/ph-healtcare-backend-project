@@ -6,11 +6,13 @@ import { prisma } from "../lib/prisma";
 import { Role, UserStatus } from "../../generated/prisma/enums";
 import JwtUtils from "../utils/jwt";
 import { envVars } from "../config/env";
+import { JwtPayload } from "jsonwebtoken";
+
 
 export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Response, next: NextFunction) => {
     try {
         const sessionToken = CookieUtils.getCookie(req, "betterAuthSessionToken");
-        console.log(sessionToken);
+        // console.log(sessionToken);
         if (!sessionToken) {
             throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized - No session token provided");
         }
@@ -29,7 +31,7 @@ export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Res
             })
             if (sessionExists) {
                 const user = sessionExists.user;
-                console.log(user, "hello user");
+                // console.log(user, "hello user");
                 const now = new Date();
                 const expiresAt = new Date(sessionExists.expiresAt);
                 const createdAt = new Date(sessionExists.createdAt);
@@ -52,6 +54,11 @@ export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Res
                 if (authRoles.length > 0 && !authRoles.includes(user.role)) {
                     throw new AppError(StatusCodes.FORBIDDEN, "Forbidden - User does not have the required role");
                 }
+                req.user = {
+                    userId: user.id,
+                    email: user.email,
+                    role: user.role
+                }
             }
 
         }
@@ -61,12 +68,12 @@ export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Res
             throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized")
         }
         const verifyToken = JwtUtils.verifyToken(accessToken, envVars.ACCESS_TOKEN_SECRET as string)
+        const data = verifyToken.data as JwtPayload
 
-        const { role } = verifyToken as { role: Role }
         if (!verifyToken) {
             throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized - Invalid token")
         }
-        if (authRoles.length > 0 && !authRoles.includes(role as Role)) {
+        if (authRoles.length > 0 && !authRoles.includes(data.role! as Role)) {
             throw new AppError(StatusCodes.FORBIDDEN, "Forbidden - User does not have the required role")
         }
 
