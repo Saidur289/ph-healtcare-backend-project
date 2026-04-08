@@ -11,7 +11,7 @@ import { JwtPayload } from "jsonwebtoken";
 
 export const checkAuth = (...authRoles: Role[]) => async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const sessionToken = CookieUtils.getCookie(req, "betterAuthSessionToken");
+        const sessionToken = CookieUtils.getCookie(req, "better-auth.session_token");
         // console.log(sessionToken);
         if (!sessionToken) {
             throw new AppError(StatusCodes.UNAUTHORIZED, "Unauthorized - No session token provided");

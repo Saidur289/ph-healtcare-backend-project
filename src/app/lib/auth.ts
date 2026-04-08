@@ -4,6 +4,7 @@ import { prisma } from "./prisma";
 import { Role, UserStatus } from "../../generated/prisma/enums";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { sendEmail } from "../utils/email";
+import { envVars } from "../config/env";
 // If your Prisma file is located elsewhere, you can change the path
 
 
@@ -16,6 +17,24 @@ export const auth = betterAuth({
         enabled: true,
         requireEmailVerification: true,
 
+    },
+    socialProviders: {
+        google: {
+            clientId: envVars.GOOGLE_CLIENT_ID,
+            clientSecret: envVars.GOOGLE_SECRET_KEY,
+            mapProfileToUser: (profile) => {
+                return {
+                    name: profile.name,
+                    email: profile.email,
+                    role: Role.PATIENT,
+                    emailVerified: true,
+                    status: UserStatus.ACTIVE,
+                    needPasswordChange: false,
+                    isDeleted: false,
+                    deletedAt: null
+                }
+            }
+        }
     },
     emailVerification: {
         sendOnSignIn: true,
@@ -100,6 +119,7 @@ export const auth = betterAuth({
                                 otp
                             }
                         })
+                        console.log("sent otp to your email", email, otp);
                     }
                 }
             },
@@ -108,5 +128,30 @@ export const auth = betterAuth({
         })
 
 
-    ]
+    ],
+    redirectURLs: {
+        signin: `${envVars.BETTER_AUTH_URL}/api/v1/auth/google/success`,
+    },
+    trustedOrigins: [
+        process.env.BETTER_AUTH_URL || "http://localhost:5000", envVars.FRONTEND_URL],
+    advanced: {
+        useSecureCookies: false,
+        cookies: {
+            state: {
+                attributes: {
+                    sameSite: "none",
+                    secure: true,
+                    httpOnly: true
+                }
+            },
+            sessionToken: {
+                attributes: {
+                    sameSite: "none",
+                    secure: true,
+                    httpOnly: true
+                }
+            }
+        }
+
+    }
 });

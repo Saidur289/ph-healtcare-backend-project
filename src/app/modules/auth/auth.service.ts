@@ -14,6 +14,7 @@ import { IRequestUser } from "../../interface/requestUser.interface"
 
 
 
+
 const registerPatient = async (payload: IRegisterPatientPayload) => {
     const { name, email, password } = payload
     const data = await auth.api.signUpEmail({
@@ -58,13 +59,13 @@ const registerPatient = async (payload: IRegisterPatientPayload) => {
         })
         return { ...data, patient, accessToken, refreshToken }
     } catch (error) {
-        console.log("Error occurred while registering patient:", error);
+        console.log("Transaction error : ", error);
         await prisma.user.delete({
             where: {
                 id: data.user.id
             }
         })
-        throw error
+        throw error;
     }
 
 
@@ -211,6 +212,18 @@ const changePassword = async (payload: IChangePasswordPayload, sessionToken: str
     if (!session) {
         throw new AppError(StatusCodes.UNAUTHORIZED, "invalid session token")
     }
+    // google login user cannot change password
+    const googleLoginUser = await prisma.user.findUnique({
+        where: {
+            id: session.user.id
+        },
+        include: {
+            accounts: true
+        }
+    })
+    if (googleLoginUser && googleLoginUser.accounts[0].providerId === "google") {
+        throw new AppError(StatusCodes.BAD_REQUEST, "Google user cannot change password")
+    }
     const { currentPassword, newPassword } = payload
     const result = await auth.api.changePassword({
         body: {
@@ -222,6 +235,7 @@ const changePassword = async (payload: IChangePasswordPayload, sessionToken: str
             Authorization: `Bearer ${sessionToken}`
         })
     })
+    //for doctor super admin or admin create doctor then we forcefully send email to doctor to change password
     if (session.user.needPasswordChange) {
         await prisma.user.update({
             where: {
@@ -278,6 +292,108 @@ const verifyEmail = async (email: string, otp: string) => {
             }
         })
     }
+    return result.status
+}
+const forgetPassword = async (email: string) => {
+    const isUserExists = await prisma.user.findUnique({
+        where: {
+            email
+        },
+        include: {
+            accounts: true
+        }
+    })
+    if (!isUserExists) {
+        throw new AppError(StatusCodes.NOT_FOUND, "Email not found")
+    }
+    if (!isUserExists.emailVerified) {
+        throw new AppError(StatusCodes.BAD_REQUEST, "Email not verified")
+    }
+    if (isUserExists.isDeleted || isUserExists.status === "DELETED") {
+        throw new AppError(StatusCodes.BAD_REQUEST, "User is already deleted")
+    }
+    if (isUserExists.accounts[0].providerId === "google") {
+        throw new AppError(StatusCodes.BAD_REQUEST, "Google user cannot reset password")
+    }
+    const result = await auth.api.requestPasswordResetEmailOTP({
+        body: {
+            email
+        }
+    })
+    return result
+}
+const resetPassword = async (email: string, otp: string, newPassword: string) => {
+    const isUserExists = await prisma.user.findUnique({
+        where: {
+            email
+        }
+    })
+    if (!isUserExists) {
+        throw new AppError(StatusCodes.NOT_FOUND, "Email not found")
+    }
+    if (!isUserExists.emailVerified) {
+        throw new AppError(StatusCodes.BAD_REQUEST, "Email not verified")
+    }
+    if (isUserExists.isDeleted || isUserExists.status === "DELETED") {
+        throw new AppError(StatusCodes.BAD_REQUEST, "User is already deleted")
+    }
+    const result = await auth.api.resetPasswordEmailOTP({
+        body: {
+            email,
+            otp,
+            password: newPassword
+        }
+    })
+    if (isUserExists.needPasswordChange) {
+        await prisma.user.update({
+            where: {
+                id: isUserExists.id
+            },
+            data: {
+                needPasswordChange: false,
+            }
+        })
+    }
+    if (result.success) {
+        await prisma.session.deleteMany({
+            where: {
+                userId: isUserExists.id
+            }
+        })
+    }
+    return result;
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const googleLoginSuccess = async (session: Record<string, any>) => {
+    const isPatientExists = await prisma.patient.findUnique({
+        where: {
+            userId: session.user.id
+        }
+    })
+    if (!isPatientExists) {
+        await prisma.patient.create({
+            data: {
+                userId: session.user.id,
+                name: session.user.name,
+                email: session.user.email,
+            }
+        })
+    }
+    const accessToken = TokenUtils.getAccessToken({
+        userId: session.user.id,
+        role: session.user.role,
+        name: session.user.name,
+
+    })
+    const refreshToken = TokenUtils.getRefreshToken({
+        userId: session.user.id,
+        role: session.user.role,
+        name: session.user.name,
+
+    })
+    return { accessToken, refreshToken }
+
+
 }
 
 export const AuthService = {
@@ -287,5 +403,9 @@ export const AuthService = {
     getNewToken,
     changePassword,
     logoutUser,
-    verifyEmail
+    verifyEmail,
+    forgetPassword,
+    resetPassword,
+    googleLoginSuccess
+
 }
