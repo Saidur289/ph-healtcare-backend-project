@@ -3,29 +3,46 @@ import { StatusCodes } from "http-status-codes";
 import AppError from "../../errorHelpers/AppError";
 import { prisma } from "../../lib/prisma"
 import { IUpdateDoctor } from "./doctor.interface";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { IQueryParams } from "../../interface/query.interface";
+import { doctorFilterableFields, doctorIncludeConfig, doctorSearchableFields } from "./doctor.constant";
+import { Doctor, Prisma } from "../../../generated/prisma/client";
 
-const getAllDoctors = async () => {
-    const result = await prisma.doctor.findMany({
-        where: {
-            isDeleted: false
-        },
-        orderBy: {
-            createdAt: "desc"
-        },
-        include: {
-            user: true,
-            specialties: {
-                include: {
-                    specialty: true
-                }
+const getAllDoctors = async (query: IQueryParams) => {
+    // const result = await prisma.doctor.findMany({
+    //     where: {
+    //         isDeleted: false
+    //     },
+    //     orderBy: {
+    //         createdAt: "desc"
+    //     },
+    //     include: {
+    //         user: true,
+    //         specialties: {
+    //             include: {
+    //                 specialty: true
+    //             }
+    //         }
+    //     }
+    // })
+
+
+
+    // return result
+    const queryBuilder = new QueryBuilder<Doctor, Prisma.DoctorWhereInput, Prisma.DoctorInclude>(prisma.doctor, query, {
+        searchableFields: doctorSearchableFields,
+        filterableFields: doctorFilterableFields
+    })
+    const result = await queryBuilder.search().filter().where({ isDeleted: false }).include({
+        user: true,
+        specialties: {
+            include: {
+                specialty: true
             }
         }
-    })
-
-
-
+    }).dynamicInclude(doctorIncludeConfig).sort().paginate().fields().execute()
+    console.log(result);
     return result
-
 
 }
 const getDoctorById = async (doctorId: string) => {

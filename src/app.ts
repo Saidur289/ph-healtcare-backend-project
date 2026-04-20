@@ -25,6 +25,7 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "Authorization", "Set-Cookie"]
 }))
 app.use(cookieParser())
+app.use(express.urlencoded({ extended: true }))
 app.use("/api/v1", IndexRoutes)
 app.use("/api/auth", toNodeHandler(auth))
 
