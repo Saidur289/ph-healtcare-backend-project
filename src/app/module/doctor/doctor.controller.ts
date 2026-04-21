@@ -6,6 +6,7 @@ import { IQueryParams } from "../../interface/query.interface";
 
 const getAllDoctors = catchAsync(async (req: Request, res: Response) => {
     const query = req.query
+    // console.log(query, "query");
     const result = await DoctorService.getAllDoctors(query as IQueryParams)
     sendResponse(res, {
         success: true,

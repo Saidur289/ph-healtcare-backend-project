@@ -4,7 +4,7 @@ export interface IUpdateDoctor {
     name?: string;
     profilePhoto?: string;
     designation?: string;
-    currentWorkplace?: string;
+    currentWorkingPlace?: string;
     registrationNumber?: string;
     appointmentFee?: number;
     experience?: number;

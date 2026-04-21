@@ -14,7 +14,7 @@ const createDoctorZodSchema = z.object({
         gender: z.enum([Gender.FEMALE, Gender.MALE], "Gender must be either"),
         qualification: z.string("Qualification is required").min(5, "Qualification must be at least 5 characters long").max(50, "Qualification must be less than 50 characters"),
         designation: z.string("Designation is required").min(5, "Designation must be at least 5 characters long").max(50, "Designation must be less than 50 characters"),
-        currentWorkplace: z.string("Current working place is required").min(5, "Current working place must be at least 5 characters long").max(50, "Current working place must be less than 50 characters").optional(),
+        currentWorkingPlace: z.string().min(5, "Current working place must be at least 5 characters long").max(50, "Current working place must be less than 50 characters").optional(),
     }),
     specialties: z.array(z.uuid(), "Specialties must be an array of UUIDs")
 })

@@ -1,4 +1,4 @@
-import { envVars } from './../../config/env';
+import { envVars } from '../../config/env';
 import { Request, Response } from "express";
 import { catchAsync } from "../../shared/catchAsync";
 import { AuthService } from "./auth.service";

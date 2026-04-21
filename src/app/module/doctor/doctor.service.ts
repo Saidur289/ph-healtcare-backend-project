@@ -33,7 +33,7 @@ const getAllDoctors = async (query: IQueryParams) => {
         searchableFields: doctorSearchableFields,
         filterableFields: doctorFilterableFields
     })
-    const result = await queryBuilder.search().filter().where({ isDeleted: false }).include({
+    const result = await queryBuilder.search().filter().include({
         user: true,
         specialties: {
             include: {
@@ -41,7 +41,7 @@ const getAllDoctors = async (query: IQueryParams) => {
             }
         }
     }).dynamicInclude(doctorIncludeConfig).sort().paginate().fields().execute()
-    console.log(result);
+    // console.log(result);
     return result
 
 }

@@ -37,7 +37,7 @@ export interface ICreateDoctorPayload {
         designation: string
         qualification: string
         contactNumber?: string
-        currentWorkplace: string
+        currentWorkingPlace: string
         registrationNumber: string
         appointmentFee: number
         gender: Gender

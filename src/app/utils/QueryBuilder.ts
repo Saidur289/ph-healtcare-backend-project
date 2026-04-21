@@ -16,7 +16,6 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
             where: {},
             include: {},
             orderBy: {},
-            select: {},
             skip: 0,
             take: 10
         }
@@ -27,19 +26,21 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
     }
     search(): this {
         const { searchTerm } = this.queryParams;
+        // console.log("search:", searchTerm);
         const { searchableFields } = this.config;
         // doctorSearchableFields = ['user.name', 'user.email', 'specialties.specialty.title' , 'specialties.specialty.description']
         if (searchTerm && searchableFields && searchableFields.length > 0) {
             const searchConditions: Record<string, unknown>[] = searchableFields.map((field) => {
                 if (field.includes(".")) {
                     const parts = field.split(".");
+                    console.log(parts, "parts");
 
                     if (parts.length === 2) {
                         const [relation, nestedField] = parts;
 
                         const stringFilter: PrismaStringFilter = {
                             contains: searchTerm,
-                            mode: 'insensitive' as const,
+                            mode: "insensitive" as const,
                         }
 
                         return {
@@ -52,7 +53,7 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
 
                         const stringFilter: PrismaStringFilter = {
                             contains: searchTerm,
-                            mode: 'insensitive' as const,
+                            mode: "insensitive" as const,
                         }
 
                         return {
@@ -85,6 +86,7 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
 
             const countWhereConditions = this.countQuery.where as PrismaWhereConditions;
             countWhereConditions.OR = searchConditions;
+            // console.log(JSON.stringify(whereConditions, null, 2));
         }
 
         return this;
@@ -99,6 +101,7 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
         Object.keys(this.queryParams).forEach((key) => {
             if (!excludedField.includes(key)) {
                 filterParams[key] = this.queryParams[key];
+                console.log(filterParams[key]);
             }
         })
         //{nmae: "abc", age: 20}
@@ -341,6 +344,7 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
                 .map(field => field.trim());
 
             // Initialize selectFields object
+
             this.selectFields = {};
 
             // Loop through each field
