@@ -12,7 +12,9 @@
     "generate": "prisma generate",
     "studio": "prisma studio",
     "pull": "prisma db pull",
-    "push": "prisma db push"
+    "push": "prisma db push",
+    "stripe:webhook": "stripe listen --forward-to localhost:5000/webhook",
+    "stripe:trigger": "stripe trigger payment_intent.succeeded"
   },
   "keywords": [],
   "author": "",
@@ -51,9 +53,12 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
     "multer-storage-cloudinary": "^4.0.0",
+    "node-cron": "^4.2.1",
     "nodemailer": "^8.0.4",
     "pg": "^8.20.0",
     "qs": "^6.15.1",
+    "stripe": "^22.0.2",
+    "uuid": "^14.0.0",
     "zod": "^4.3.6"
   }
 }
