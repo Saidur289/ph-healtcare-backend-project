@@ -152,12 +152,14 @@ const getMySingleAppointment = async (
   user: IRequestUser,
   appointmentId: string,
 ) => {
-  const patientData = await prisma.patient.findUniqueOrThrow({
+  const patientData = await prisma.patient.findFirst({
     where: { email: user.email },
   });
-  const doctorData = await prisma.doctor.findUniqueOrThrow({
+
+  const doctorData = await prisma.doctor.findFirst({
     where: { email: user.email },
   });
+
   let appointment;
   if (patientData) {
     appointment = await prisma.appointment.findUniqueOrThrow({
