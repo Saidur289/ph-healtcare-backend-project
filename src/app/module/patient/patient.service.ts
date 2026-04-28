@@ -64,6 +64,10 @@ const updateProfile = async (
       Array.isArray(payload.patientMedicalReport) &&
       payload.patientMedicalReport.length > 0
     ) {
+      console.log(
+        payload.patientMedicalReport,
+        "*************************************",
+      );
       for (const report of payload.patientMedicalReport) {
         if (report.shouldDelete && report.reportId) {
           const deleteReport = await tx.medicalReport.delete({
@@ -88,10 +92,7 @@ const updateProfile = async (
   });
   const result = await prisma.patient.findUniqueOrThrow({
     where: { email: user.email },
-    include: {
-      patientHealthData: true,
-      patientMedicalReport: true,
-    },
+    include: { patientHealthData: true, medicalReports: true },
   });
   return result;
 };

@@ -7,7 +7,8 @@ import z from "zod";
 import { handleZodError } from "../errorHelpers/HandleZodError";
 
 import AppError from "../errorHelpers/AppError";
-import { deleteFileFromCloudinary } from "../config/cloudinary.config";
+
+import { deleteUploadedFilesFromGlobalErrorHandler } from "../utils/deletedUploadedFilesFromGlobalErrorHandler";
 
 const globalErrorHandler = async (
   err: any,
@@ -24,16 +25,18 @@ const globalErrorHandler = async (
   let message: string = "internal server error";
   let stack: string | undefined = undefined;
   //delete file from cloudinary for each file when error happen in prisma and not save in database
-  if (req.file) {
-    await deleteFileFromCloudinary(req.file.path);
-  }
-  // delete multiple file from cloudinary
-  if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-    const imageUrls = req.files.map((file: any) => file.path);
-    await Promise.all(
-      imageUrls.map((imageUrl: string) => deleteFileFromCloudinary(imageUrl)),
-    );
-  }
+  // if (req.file) {
+  //   await deleteFileFromCloudinary(req.file.path);
+  // }
+  // // delete multiple file from cloudinary
+  // if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+  //   const imageUrls = req.files.map((file: any) => file.path);
+  //   await Promise.all(
+  //     imageUrls.map((imageUrl: string) => deleteFileFromCloudinary(imageUrl)),
+  //   );
+  // }
+  // // delete file from cloudinary for each file when error happen in express
+  await deleteUploadedFilesFromGlobalErrorHandler(req);
   if (err instanceof z.ZodError) {
     const simplifiedError = handleZodError(err);
     message = simplifiedError.message;

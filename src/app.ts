@@ -11,7 +11,7 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./app/lib/auth";
 import qs from "qs";
 import { PaymentController } from "./app/module/payment/payment.controller";
-import { AppointmentService } from "./app/module/appoinment/appointment.service";
+import { AppointmentService } from "./app/module/appointment/appointment.service";
 
 const app = express();
 //middleware for parsing query string
