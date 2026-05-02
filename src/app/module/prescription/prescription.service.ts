@@ -321,7 +321,7 @@ const updatePrescription = async (
     await sendEmail({
       to: prescriptionData.patient.email,
       subject: `Your prescription from Dr. ${prescriptionData.doctor.name} has been updated`,
-      templateName: "prescription_update",
+      templateName: "prescription",
       templateData: {
         doctorName: prescriptionData.doctor.name,
         patientName: prescriptionData.patient.name,
