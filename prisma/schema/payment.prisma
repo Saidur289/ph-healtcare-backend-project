@@ -1,18 +1,48 @@
 model Payment {
     id                 String        @id @default(uuid())
-    amount             Float
+    // whole taka (BDT fees are whole numbers). Never a float; Stripe gets amount * 100 (poisha)
+    amount             Int
     transactionId      String        @unique @db.Uuid()
     stripeEventId      String?       @unique
     status             PaymentStatus @default(UNPAID)
     invoiceUrl         String?
+    // readable invoice number, e.g. INV-2026-000123 (set when the payment succeeds)
+    invoiceNumber      String?       @unique
     paymentGatewayData Json?
+    // current Stripe Checkout session (expired by the cron job when the deadline passes)
+    checkoutSessionId  String?       @unique
+    checkoutUrl        String?
+    // the Stripe PaymentIntent behind a successful Checkout (needed for refunds / charge events)
+    stripePaymentIntentId String?    @unique
+    refundId           String?
+    paidAt             DateTime?
+    refundedAt         DateTime?
     createdAt          DateTime      @default(now())
     updatedAt          DateTime      @updatedAt
 
     appointmentId String      @unique
-    appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+    appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
 
     @@index([appointmentId])
     @@index([transactionId])
+    @@index([status])
     @@map("payments")
+}
+
+// Every Stripe webhook event we have processed. The event id is the primary key, so the
+// same event delivered twice is ignored (Stripe retries and may send duplicates).
+model StripeWebhookEvent {
+    id        String   @id
+    type      String
+    createdAt DateTime @default(now())
+
+    @@map("stripe_webhook_events")
+}
+
+// Per-year counter for invoice numbers (INV-<year>-<000001>); incremented atomically.
+model InvoiceCounter {
+    year Int @id
+    last Int @default(0)
+
+    @@map("invoice_counters")
 }

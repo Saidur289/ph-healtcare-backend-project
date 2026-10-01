@@ -5,3 +5,6 @@ node_modules
 
 /src/generated
 .vscode
+
+# build output
+dist/

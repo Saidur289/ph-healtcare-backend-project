@@ -23,6 +23,8 @@ const scheduleShape = z
     endDate: dateField("End date"),
     startTime: timeField("Start time"),
     endTime: timeField("End time"),
+    // IANA name of the admin's time zone, e.g. "Asia/Dhaka" (default: CLINIC_TIME_ZONE)
+    timeZone: z.string().min(1).max(64).optional(),
   })
   .refine((data) => Date.parse(data.endDate) >= Date.parse(data.startDate), {
     message: "End date must be on or after the start date",

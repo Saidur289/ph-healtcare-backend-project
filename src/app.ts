@@ -12,6 +12,8 @@ import { auth } from "./app/lib/auth";
 import qs from "qs";
 import { PaymentController } from "./app/module/payment/payment.controller";
 import { AppointmentService } from "./app/module/appointment/appointment.service";
+import { AppointmentReminder } from "./app/module/appointment/appointment.reminder";
+import { PaymentService } from "./app/module/payment/payment.service";
 
 const app = express();
 //middleware for parsing query string
@@ -33,7 +35,7 @@ app.use(
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
+    allowedHeaders: ["Content-Type", "Authorization", "Set-Cookie", "Idempotency-Key"],
   }),
 );
 // better-auth must be mounted BEFORE express.json() (it reads the raw body itself).
@@ -54,12 +56,29 @@ app.use("/api/auth", allowPublicBetterAuthPaths, toNodeHandler(auth));
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
-cron.schedule(" */25 * * * *", async () => {
-  // catch: a failed run must not become an unhandled rejection; the next run retries
+// Background jobs, every 5 minutes. Each job catches its own errors (the next run retries)
+// and is safe with several servers: advisory lock / per-appointment claim.
+cron.schedule("*/5 * * * *", async () => {
+  const jobs: [string, () => Promise<unknown>][] = [
+    ["cancel unpaid appointments", () => AppointmentService.cancelUnpaidAppointment()],
+    ["1h reminders", () => AppointmentReminder.sendReminders("1h")],
+    ["24h reminders", () => AppointmentReminder.sendReminders("24h")],
+    ["missing invoices", () => PaymentService.retryMissingInvoices()],
+  ];
+  for (const [name, job] of jobs) {
+    try {
+      await job();
+    } catch (error) {
+      console.error(`Cron (${name}) failed:`, error);
+    }
+  }
+});
+// Daily at 03:00: compare Stripe with the DB and log any mismatch (read-only)
+cron.schedule("0 3 * * *", async () => {
   try {
-    await AppointmentService.cancelUnpaidAppointment();
+    await PaymentService.reconcilePayments();
   } catch (error) {
-    console.error("Cron (cancel unpaid appointments) failed:", error);
+    console.error("Cron (payment reconciliation) failed:", error);
   }
 });
 app.use("/api/v1", IndexRoutes);

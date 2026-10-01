@@ -17,6 +17,14 @@ const getStatusCodeFromPrismaError = (rawCode: string): number => {
   if (["P2025", "P2015", "P2018"].includes(errorCode)) {
     return StatusCodes.NOT_FOUND;
   }
+  // P2034: write conflict / deadlock between two transactions -> the client may retry
+  if (errorCode === "P2034") {
+    return StatusCodes.CONFLICT;
+  }
+  // P2028: no DB connection free in time (server busy), not a client mistake
+  if (errorCode === "P2028") {
+    return StatusCodes.SERVICE_UNAVAILABLE;
+  }
   // P2003: foreign key constraint failed (related record missing / still in use)
   if (errorCode === "P2003") {
     return StatusCodes.CONFLICT;

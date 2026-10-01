@@ -79,7 +79,21 @@ const deleteDoctor = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getAvailableSlots = catchAsync(async (req: Request, res: Response) => {
+  const result = await DoctorService.getAvailableSlots(
+    req.params.id as string,
+    req.query,
+  );
+  sendResponse(res, {
+    success: true,
+    httpStatusCode: 200,
+    message: "Available slots retrieved successfully",
+    data: result,
+  });
+});
+
 export const DoctorController = {
+  getAvailableSlots,
   getAllDoctors,
   getAllDoctorsForAdmin,
   getDoctorById,

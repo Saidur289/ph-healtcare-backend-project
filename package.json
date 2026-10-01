@@ -13,7 +13,7 @@
     "studio": "prisma studio",
     "pull": "prisma db pull",
     "push": "prisma db push",
-    "stripe:webhook": "stripe listen --forward-to localhost:5000/webhook",
+    "stripe:webhook": "stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.expired,charge.refunded --forward-to localhost:5000/webhook",
     "stripe:trigger": "stripe trigger payment_intent.succeeded"
   },
   "keywords": [],

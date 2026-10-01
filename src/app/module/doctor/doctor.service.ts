@@ -257,7 +257,58 @@ const deleteDoctor = async (doctorId: string) => {
   return deleteDoctor;
 };
 
+// PUBLIC: free, future slots of one doctor between ?from and ?to (default: next 14 days, max 60)
+const getAvailableSlots = async (
+  doctorId: string,
+  query: { from?: unknown; to?: unknown },
+) => {
+  const doctor = await prisma.doctor.findFirst({
+    where: { id: doctorId, isDeleted: false },
+    select: { id: true },
+  });
+  if (!doctor) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Doctor not found");
+  }
+  const parseDate = (value: unknown) => {
+    if (typeof value !== "string" || !value) return undefined;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "from/to must be valid dates");
+    }
+    return date;
+  };
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const requestedFrom = parseDate(query.from);
+  const from = requestedFrom && requestedFrom > now ? requestedFrom : now;
+  const to = parseDate(query.to) ?? new Date(from.getTime() + 14 * dayMs);
+  if (to <= from) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "\"to\" must be after \"from\"");
+  }
+  if (to.getTime() - from.getTime() > 60 * dayMs) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "The range can be at most 60 days");
+  }
+  const slots = await prisma.doctorSchedules.findMany({
+    where: {
+      doctorId,
+      isBooked: false,
+      schedule: { startDateTime: { gt: from, lt: to } },
+    },
+    orderBy: { schedule: { startDateTime: "asc" } },
+    select: {
+      scheduleId: true,
+      schedule: { select: { startDateTime: true, endDateTime: true } },
+    },
+  });
+  return slots.map((slot) => ({
+    scheduleId: slot.scheduleId,
+    startDateTime: slot.schedule.startDateTime,
+    endDateTime: slot.schedule.endDateTime,
+  }));
+};
+
 export const DoctorService = {
+  getAvailableSlots,
   getAllDoctors,
   getAllDoctorsForAdmin,
   getDoctorById,

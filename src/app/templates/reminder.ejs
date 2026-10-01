@@ -1,0 +1,11 @@
+<h1>Hello <%= name %></h1>
+<p>
+  This is a reminder that your appointment
+  <% if (role === "PATIENT") { %>with Dr. <%= otherName %><% } else { %>with <%= otherName %><% } %>
+  starts <b><%= when %></b>.
+</p>
+<p>Time: <b><%= startTime %></b> (<%= timeZone %>)</p>
+<% if (role === "PATIENT" && !isPaid) { %>
+  <p><b>This appointment is not paid yet.</b> Please pay before <%= paymentDeadline %>, otherwise it will be cancelled automatically.</p>
+<% } %>
+<p>You can see the details in your dashboard.</p>

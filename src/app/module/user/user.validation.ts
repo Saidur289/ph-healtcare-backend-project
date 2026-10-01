@@ -25,9 +25,11 @@ const createDoctorZodSchema = z.strictObject({
       .min(11, "Contact number must be at least 11 characters long")
       .max(14, "Contact number must be less than 14 characters"),
     registrationNumber: z.string("Registration number is required"),
+    // whole taka; Stripe needs at least ~50 BDT for a card payment
     appointmentFee: z
-      .number("Appointment fee must be a number")
-      .nonnegative("Appointment fee must be a positive number"),
+      .int("Appointment fee must be a whole number of taka")
+      .min(50, "Appointment fee must be at least 50")
+      .max(1_000_000, "Appointment fee is too high"),
     gender: z.enum([Gender.FEMALE, Gender.MALE], "Gender must be either"),
     qualification: z
       .string("Qualification is required")

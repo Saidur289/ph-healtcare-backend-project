@@ -9,16 +9,22 @@ const bookAppointmentZodSchema = z.strictObject({
 const changeAppointmentStatusZodSchema = z.strictObject({
   status: z.enum(
     [
-      AppointmentStatus.SCHEDULED,
       AppointmentStatus.INPROGRESS,
       AppointmentStatus.COMPLETED,
       AppointmentStatus.CANCELED,
+      AppointmentStatus.NO_SHOW,
     ],
-    "Invalid appointment status",
+    "Status must be INPROGRESS, COMPLETED, CANCELED or NO_SHOW",
   ),
+  reason: z.string().trim().min(1).max(300, "Reason must be at most 300 characters").optional(),
+});
+
+const rescheduleAppointmentZodSchema = z.strictObject({
+  scheduleId: z.uuid("A valid schedule id is required"),
 });
 
 export const AppointmentValidation = {
   bookAppointmentZodSchema,
   changeAppointmentStatusZodSchema,
+  rescheduleAppointmentZodSchema,
 };

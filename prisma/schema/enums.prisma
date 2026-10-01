@@ -22,11 +22,24 @@ enum AppointmentStatus {
   INPROGRESS
   COMPLETED
   CANCELED
+  NO_SHOW
+}
+
+// who cancelled an appointment (SYSTEM = unpaid-appointment cron job)
+enum CancelledBy {
+  PATIENT
+  DOCTOR
+  ADMIN
+  SYSTEM
 }
 
 enum PaymentStatus {
   PAID
   UNPAID
+  // unpaid and the payment deadline passed (appointment cancelled)
+  EXPIRED
+  // paid, then refunded (appointment cancelled)
+  REFUNDED
 }
 
 enum BloodGroup {

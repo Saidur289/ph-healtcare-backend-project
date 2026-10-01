@@ -4,8 +4,10 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../../src/generated/prisma"
+  // used for the "one active appointment per slot" index (appointment.prisma)
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {

@@ -32,9 +32,11 @@ export const updateDoctorZodSchema = z.strictObject({
           "Gender must be either MALE or FEMALE",
         )
         .optional(),
+      // whole taka; Stripe needs at least ~50 BDT for a card payment
       appointmentFee: z
-        .number("Appointment fee must be a number")
-        .nonnegative("Appointment fee cannot be negative")
+        .int("Appointment fee must be a whole number of taka")
+        .min(50, "Appointment fee must be at least 50")
+        .max(1_000_000, "Appointment fee is too high")
         .optional(),
       qualification: z
         .string("Qualification must be string")

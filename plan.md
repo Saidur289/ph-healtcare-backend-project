@@ -20,8 +20,8 @@ This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 
 | 2 | Core bug fixes (things that are broken today) | ☑ (end-to-end check pending DB) |
 | 3 | Authentication and session hardening | ☑ (3.19 deliberately changed; browser test of register/verify still to do) |
 | 4 | Authorization (who can do what) | ☑ |
-| 5 | Appointment booking engine | ☐ |
-| 6 | Payments (Stripe) | ☐ |
+| 5 | Appointment booking engine | ☑ |
+| 6 | Payments (Stripe) | ☑ |
 | 7 | Consultation: video call, prescription, review | ☐ |
 | 8 | Frontend: finish every feature | ☐ |
 | 9 | Platform security hardening | ☐ |
@@ -30,6 +30,33 @@ This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 
 | 12 | Performance and data quality | ☐ |
 | 13 | DevOps, deployment and monitoring | ☐ |
 | 14 | Launch checklist | ☐ |
+
+### Full test run, Phases 1–6 (2026-10-01)
+
+| Layer | Result |
+|-------|--------|
+| Type-check and lint, both projects | ✅ (client: the 2 old warnings) |
+| Client production build (`next build`) | ✅ 40 routes plus the proxy |
+| Server compile | ✅ with `--ignoreDeprecations 5.0`. ❌ `npm run build` itself still fails until **0.4** is fixed |
+| Database-free tests (P1–P3) | ✅ route 401s, PDFs, 21 validation/error checks, 30 auth checks, 21 proxy checks, redirect attacks |
+| Live tests on Neon and Stripe test mode | ✅ auth 16, ownership 21, booking 33 (20-way race), payments 16 |
+| Browser test of the production build | ✅ login, redirect param, role guards, public doctor page, slot picking, pay-later booking, Stripe test Checkout opens, cancelled banner, logout, forced password change (with the policy shown in the form), doctor schedules, admin doctor list, all 14 admin sidebar links (no 404s), forgot password and duplicate register (no enumeration), wrong OTP message |
+
+**Fixed during the test:**
+- `getUserInfo` swallowed Next.js's internal "dynamic rendering" signal; it now uses `unstable_rethrow`.
+- The auth actions now log the real error instead of only "Could not reach the server".
+
+**Found (not fixed yet):**
+- [ ] **Slow responses:** every DB round trip to Neon (US-East) takes **about 300 ms**, so login takes 3–5 s and booking about 15 s. Fixes:
+  - move the Neon project to the region closest to your users (for example Singapore);
+  - run independent queries in parallel (`Promise.all`);
+  - keep the DB pool warm (12.x).
+- [ ] `client/.env` and `.env.local` use `http://ph-server:5000`, which is a Docker host name. Without Docker, set `NEXT_PUBLIC_API_BASE_URL=http://localhost:5000/api/v1`.
+- [ ] **UI (Phase 8):**
+  - the doctor page shows `$800.00` (it should be ৳);
+  - admin "Joined At" shows `10 01, 2026` (wrong date format);
+  - the login and register cards aren't centred;
+  - the doctor dashboard home is a stub.
 
 ---
 
@@ -400,34 +427,44 @@ Also fixed in passing:
 **Goal:** booking is **atomic**, a slot can never be double-booked, and the appointment lifecycle is clear and enforced.
 
 ### 5A. Data model changes (one migration)
-- [ ] **5.1 [S]** Add these fields to `Appointment`:
+- [x] **5.1 [S]** Add these fields to `Appointment`:
   - `paymentDeadline DateTime`, after which an unpaid appointment is auto-cancelled;
   - `cancelledAt DateTime?`, `cancelledBy Role?` and `cancelReason String?`;
   - `startedAt DateTime?` and `completedAt DateTime?`.
-- [ ] **5.2 [S]** Add a **partial unique index** in the migration SQL, so only one active appointment can exist per doctor slot:
+  - Done:
+    - Migration `20261001150000_booking_engine` adds these, plus `isPayLater`, `idempotencyKey`, `reminder24hSentAt` and `reminder1hSentAt`.
+    - Payment gets `checkoutSessionId`, `checkoutUrl` and `refundId`.
+    - `paymentDeadline` is nullable so older rows stay valid.
+- [x] **5.2 [S]** Add a **partial unique index** in the migration SQL, so only one active appointment can exist per doctor slot:
   ```sql
   CREATE UNIQUE INDEX appointment_active_slot
     ON appointments ("doctorId", "scheduleId")
     WHERE status <> 'CANCELED';
   ```
-- [ ] **5.3 [S]** Optionally add `NO_SHOW` to `AppointmentStatus` and `REFUNDED` to `PaymentStatus`.
-- [ ] **5.4 [S]** Change `onDelete: Cascade` to `Restrict` on Appointment → Schedule/Doctor/Patient and on Payment and Prescription. Medical and financial records must **never** be hard-deleted by a cascade.
-- [ ] **5.5 [S]** Add a unique constraint or overlap check so a schedule cannot be created twice for the same `startDateTime`/`endDateTime`.
+  - Done: this lives in the Prisma schema itself via the `partialIndexes` preview feature, so future migrations won't drop it.
+- [x] **5.3 [S]** Optionally add `NO_SHOW` to `AppointmentStatus` and `REFUNDED` to `PaymentStatus`.
+  - Also added: `PaymentStatus.EXPIRED` and the `CancelledBy` enum (PATIENT, DOCTOR, ADMIN, SYSTEM).
+- [x] **5.4 [S]** Change `onDelete: Cascade` to `Restrict` on Appointment → Schedule/Doctor/Patient and on Payment and Prescription. Medical and financial records must **never** be hard-deleted by a cascade.
+- [x] **5.5 [S]** Add a unique constraint or overlap check so a schedule cannot be created twice for the same `startDateTime`/`endDateTime`.
 
 ### 5B. Schedules and slots
-- [ ] **5.6 [S]** Store every time in **UTC**. The client shows it in the user's local timezone (use `date-fns-tz` or `Intl`). Write this rule in the README.
-- [ ] **5.7 [S]** Validate schedule creation:
+- [x] **5.6 [S]** Store every time in **UTC**. The client shows it in the user's local timezone (use `date-fns-tz` or `Intl`). Write this rule in the README.
+  - Done:
+    - Written in `server/docs/booking.md`.
+    - The client sends its browser time zone, and the server converts to UTC with DST handled correctly.
+    - The old `convertDateTime` stored the wall-clock time as if it were UTC, which was wrong by the time-zone offset.
+- [x] **5.7 [S]** Validate schedule creation:
   - `start < end`;
   - the duration is a fixed slot length, for example 30 minutes;
   - no times in the past;
   - no overlaps.
-- [ ] **5.8 [S]** Validate doctor schedule selection:
+- [x] **5.8 [S]** Validate doctor schedule selection:
   - the doctor can pick only future slots;
   - the doctor cannot remove a slot that already has an active appointment.
-- [ ] **5.9 [S]** Add a public endpoint `GET /doctors/:id/available-slots?from=&to=` that returns only future, unbooked slots.
+- [x] **5.9 [S]** Add a public endpoint `GET /doctors/:id/available-slots?from=&to=` that returns only future, unbooked slots.
 
 ### 5C. Booking (pay now and pay later)
-- [ ] **5.10 [S]** Rewrite `bookAppointment` **and** `bookAppointmentWithPayLater` (`server/src/app/module/appointment/appointment.service.ts`) as one shared function, inside a single transaction. Steps:
+- [x] **5.10 [S]** Rewrite `bookAppointment` **and** `bookAppointmentWithPayLater` (`server/src/app/module/appointment/appointment.service.ts`) as one shared function, inside a single transaction. Steps:
   1. Check the doctor is active and not deleted, the slot is in the future, and the patient is active and verified.
   2. Claim the slot **atomically**:
      ```ts
@@ -442,14 +479,17 @@ Also fixed in passing:
      - pay later: for example `slot start − 2 h`.
   4. Create the Payment row (UNPAID) with the amount in **integer cents**.
   5. **After** the transaction commits, create the Stripe session (see Phase 6). Never call Stripe inside a DB transaction.
-- [ ] **5.11 [S]** Add booking rules:
+- [x] **5.11 [S]** Add booking rules:
   - a patient cannot book two overlapping appointments;
   - set a maximum number of active unpaid appointments per patient (for example 3);
   - a doctor cannot book themselves.
-- [ ] **5.12 [S]** Use an idempotency key: the client sends an `Idempotency-Key` header on booking, so double-clicking or a network retry doesn't create two appointments.
+- [x] **5.12 [S]** Use an idempotency key: the client sends an `Idempotency-Key` header on booking, so double-clicking or a network retry doesn't create two appointments.
+  - Done:
+    - The client creates one `crypto.randomUUID()` per booking attempt, and a new one after any failure.
+    - Two simultaneous requests with the same key return the same appointment (tested).
 
 ### 5D. Lifecycle (state machine)
-- [ ] **5.13 [S]** Create `appointment.stateMachine.ts` with the allowed transitions:
+- [x] **5.13 [S]** Create `appointment.stateMachine.ts` with the allowed transitions:
 
   | From | To | Who | Rule |
   |------|----|-----|------|
@@ -460,23 +500,43 @@ Also fixed in passing:
   | SCHEDULED | CANCELED | SYSTEM (cron) | unpaid and `paymentDeadline < now` |
   | SCHEDULED | NO_SHOW | DOCTOR / SYSTEM | optional |
 
-- [ ] **5.14 [S]** Replace the current status logic (`appointment.service.ts:179-229`) with the state machine:
+- [x] **5.14 [S]** Replace the current status logic (`appointment.service.ts:179-229`) with the state machine:
   - validate `status` with a zod enum;
   - return 403 or 409 for transitions that aren't allowed (instead of a 200 that does nothing);
   - when an appointment is cancelled, set `isBooked = false` on the slot inside the same transaction.
-- [ ] **5.15 [S]** Add rescheduling: a patient moves to another free slot of the same doctor, as one transaction that releases the old slot and claims the new one. Payment carries over.
+- [x] **5.15 [S]** Add rescheduling (`PATCH /appointments/reschedule/:id`): a patient moves to another free slot of the same doctor, as one transaction that releases the old slot and claims the new one. Payment carries over.
 
 ### 5E. Background jobs
-- [ ] **5.16 [S]** Rewrite the unpaid-appointment cron (`appointment.service.ts:349-397`):
+- [x] **5.16 [S]** Rewrite the unpaid-appointment cron (`appointment.service.ts:349-397`):
   - select only `status = SCHEDULED AND paymentStatus = UNPAID AND paymentDeadline < now()`;
   - use `tx` everywhere inside the transaction (not `prisma`);
   - set the appointment to CANCELED and `cancelledBy = SYSTEM`, and release the slot **only if it still belongs to this appointment**;
   - **do not delete** the Payment row; mark it cancelled or expired;
   - expire the Stripe Checkout session (`stripe.checkout.sessions.expire`).
-- [ ] **5.17 [S]** Make the cron safe when more than one server is running: use a Postgres advisory lock (`pg_try_advisory_lock`), or move jobs to a separate worker process.
-- [ ] **5.18 [S]** Send reminder emails 24 h and 1 h before an appointment to the patient and the doctor, and record that each was sent so it is never sent twice.
+- [x] **5.17 [S]** Make the cron safe when more than one server is running: use a Postgres advisory lock (`pg_try_advisory_lock`), or move jobs to a separate worker process.
+- [x] **5.18 [S]** Send reminder emails 24 h and 1 h before an appointment to the patient and the doctor, and record that each was sent so it is never sent twice.
+  - Done:
+    - `appointment.reminder.ts` and the `reminder.ejs` template.
+    - The cron now runs every 5 minutes (it was every 25).
+    - [ ] Not yet tested live, because it sends real emails. Check it once with your own email address.
 
 **Phase done when:** a test that sends 20 parallel booking requests for the same slot ends with **exactly 1** appointment and 19 responses of 409.
+
+**Status (2026-10-01):**
+- **Verified:** the race test passed 3 times in a row on Neon (1 × 201, 19 × 409, 1 appointment in the DB).
+- **33 live checks pass:**
+  - schedules: time-zone conversion, overlaps skipped, past dates refused;
+  - doctor slots: past slots refused, booked slots can't be removed;
+  - idempotency;
+  - available slots;
+  - the state machine: start needs payment, invalid transitions, no-show timing, someone else's appointment gives 404;
+  - reschedule;
+  - patient cancel frees the slot and keeps the payment as EXPIRED, and the slot can be rebooked;
+  - the unpaid limit, overlaps and the pay-later lead time;
+  - the cron job;
+  - start → complete → review.
+- **Found and fixed under load:** with 20 simultaneous bookings, transactions timed out waiting for a DB connection (P2028 → 400). The booking transaction now waits up to 10 s, a taken slot is refused before any transaction starts, and P2028 maps to 503 and P2034 to 409.
+- [ ] Not tested live (they need Stripe test keys): pay now (Checkout session), cancelling a **paid** appointment (refund), and the webhook's automatic refund of a late payment. Test these in Phase 6 with the Stripe CLI.
 
 ---
 
@@ -484,31 +544,59 @@ Also fixed in passing:
 
 **Goal:** money is never lost, never taken twice and always matches an appointment.
 
-- [ ] **6.1 [S]** Store money as an **integer in the smallest unit** (cents or poisha):
+- [x] **6.1 [S]** Store money as an **integer in the smallest unit** (cents or poisha):
   - change `Payment.amount` and `Doctor.appointmentFee` from `Float` to `Int`;
   - `unit_amount` must be an integer.
-- [ ] **6.2 [S]** Create Checkout sessions **outside** DB transactions, with:
+  - Done:
+    - **Decision:** amounts are stored as an integer in **whole taka**, because BDT fees have no poisha. That removes float errors without changing how fees are entered or shown. Stripe gets `amount * 100`.
+    - The minimum fee is 50, the same rule on client and server.
+    - Migration: `20261001170000_payments_hardening`.
+- [x] **6.2 [S]** Create Checkout sessions **outside** DB transactions, with:
   - `expires_at = paymentDeadline` (minimum 30 min);
   - `metadata: { appointmentId, paymentId }`;
   - `client_reference_id`;
   - an idempotency key.
-- [ ] **6.3 [S]** Handle these webhook events (`server/src/app/module/payment/payment.service.ts`):
+- [x] **6.3 [S]** Handle these webhook events (`server/src/app/module/payment/payment.service.ts`):
   - `checkout.session.completed`: mark PAID only if the appointment is still SCHEDULED. If it was already cancelled, **refund automatically**.
+    - Done in Phase 5: the guard and the automatic refund. The other events below are still open.
   - `checkout.session.expired`: release the slot and mark the payment expired.
   - `charge.refunded`: set the payment to REFUNDED.
-- [ ] **6.4 [S]** Make the webhook return 2xx for events it has already processed or doesn't handle, and **never** 500 for a "not found" case, because Stripe retries 500s for days. Log and alert instead.
-- [ ] **6.5 [S]** Move invoice PDF generation, the Cloudinary upload and the email **out of** the webhook transaction, into a background step. The webhook must answer in under 5 seconds.
-- [ ] **6.6 [S]** Fix the invoice data: `invoiceId` should be the payment or invoice number, not the patient id. Use a readable invoice number such as `INV-2026-000123`.
-- [ ] **6.7 [S]** Implement refunds through `stripe.refunds.create` and store the refund id. Follow the cancellation policy from 5.13.
-- [ ] **6.8 [S]** Make `POST /initiate-payment/:id` work for pay-later appointments:
+  - Done:
+    - Also `async_payment_succeeded`.
+    - A refund made in the Stripe dashboard also cancels a still-booked appointment and frees the slot.
+    - Processed event ids go in the new `stripe_webhook_events` table, so a duplicate delivery is ignored.
+- [x] **6.4 [S]** Make the webhook return 2xx for events it has already processed or doesn't handle, and **never** 500 for a "not found" case, because Stripe retries 500s for days. Log and alert instead.
+  - Done: our own 4xx errors get 200 and a log entry. Real temporary failures get 500, and the event is "un-claimed" so Stripe's retry processes it.
+- [x] **6.5 [S]** Move invoice PDF generation, the Cloudinary upload and the email **out of** the webhook transaction, into a background step. The webhook must answer in under 5 seconds.
+  - Done:
+    - The webhook only marks the payment paid; the invoice runs right after, in the background.
+    - A cron retries missing invoices every 5 min.
+    - `INVOICE_DELIVERY=off` skips upload and email for tests and CI.
+    - Moving this to a real job queue is task 12.3.
+- [x] **6.6 [S]** Fix the invoice data: `invoiceId` should be the payment or invoice number, not the patient id. Use a readable invoice number such as `INV-2026-000123`.
+  - Done:
+    - An atomic per-year counter (`invoice_counters`) gives numbers like `INV-2026-000001`.
+    - The invoice amount comes from `Payment.amount`, not the doctor's current fee.
+- [x] **6.7 [S]** Implement refunds through `stripe.refunds.create` and store the refund id. Follow the cancellation policy from 5.13.
+  - Done in Phase 5: `payment.stripe.ts` `refundCheckoutPayment` (with an idempotency key). Still to test with Stripe test mode.
+- [x] **6.8 [S]** Make `POST /initiate-payment/:id` work for pay-later appointments:
   - check ownership, UNPAID status and that the deadline hasn't passed;
   - reuse an open session if one exists.
-- [ ] **6.9 [S]** Add a daily reconciliation job that compares Stripe payments with DB payments and alerts on any mismatch.
-- [ ] **6.10 [C]** Build the payment success and cancel pages:
+- [x] **6.9 [S]** Add a daily reconciliation job that compares Stripe payments with DB payments and alerts on any mismatch.
+  - Done: daily at 03:00 it compares the last 3 days and logs `[payment-reconciliation]` errors. It only reports; it fixes nothing on its own.
+- [x] **6.10 [C]** Build the payment success and cancel pages:
   - show a clear status message;
   - poll the appointment until the webhook has updated it;
   - the redirect target must be a real page (today `/dashboard/my-appointments` is a stub).
-- [ ] **6.11 [S+C]** Use Stripe **test mode** keys locally and in CI, and **live** keys only in production. Never let the two mix.
+  - Done:
+    - `/dashboard/my-appointments` shows the list plus a `PaymentResultBanner`: on success it polls every 2 s for up to 30 s; on cancel it explains what happened.
+    - "Pay Now" only shows for SCHEDULED + UNPAID appointments.
+    - [ ] Check it in the browser after a real test-mode Checkout payment (card 4242 4242 4242 4242).
+- [x] **6.11 [S+C]** Use Stripe **test mode** keys locally and in CI, and **live** keys only in production. Never let the two mix.
+  - Done:
+    - The server refuses to start with `sk_live_` outside production, and with `sk_test_` in production (unless `ALLOW_STRIPE_TEST_IN_PRODUCTION=true` for staging).
+    - Your current key is a test key.
+    - `npm run stripe:webhook` forwards only the 4 handled events.
 
 **Phase done when:** all of these leave correct DB states:
 - pay
@@ -516,6 +604,21 @@ Also fixed in passing:
 - pay after the deadline (refunded automatically)
 - refund
 - the webhook delivering the same event twice
+
+**Status (2026-10-01):**
+- All 16 live checks pass in Stripe **test mode** against Neon, using real test-mode Checkout sessions, PaymentIntents and refunds, and webhook events signed with your secret. They cover:
+  - pay (PAID and an invoice number);
+  - a duplicate event being ignored;
+  - patient cancel → real refund;
+  - cancel before paying → session expired;
+  - paying after the deadline → automatic refund;
+  - an expired session → cancelled;
+  - a dashboard refund → cancelled and slot freed;
+  - a bad signature → 400;
+  - an unknown payment or event → 200;
+  - reconciliation.
+- Docs: `server/docs/payments.md`.
+- [ ] Still to do: one real Checkout in the browser with `npm run stripe:webhook` running, to see the full redirect → banner → invoice email.
 
 ---
 

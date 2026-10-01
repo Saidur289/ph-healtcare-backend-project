@@ -12,7 +12,8 @@ model Doctor {
   registrationNumber  String @unique
   experience          Int    @default(0)
   gender              Gender
-  appointmentFee      Float
+  // whole taka (see Payment.amount)
+  appointmentFee      Int
   qualification       String
   currentWorkingPlace String?
   designation         String

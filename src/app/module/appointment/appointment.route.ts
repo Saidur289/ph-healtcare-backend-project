@@ -35,6 +35,12 @@ router.post(
   validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointmentWithPayLater,
 );
+router.patch(
+  "/reschedule/:id",
+  checkAuth(Role.PATIENT),
+  validateRequest(AppointmentValidation.rescheduleAppointmentZodSchema),
+  AppointmentController.rescheduleAppointment,
+);
 router.post(
   "/initiate-payment/:id",
   checkAuth(Role.PATIENT),

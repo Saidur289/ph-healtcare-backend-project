@@ -24,6 +24,7 @@ Someone else's record is answered with **404** (we don't confirm it exists) or *
 | GET | `/specialties` | |
 | GET | `/doctors` | **safe fields only** (`doctorPublicSelect`); `?include=` / `?fields=` ignored |
 | GET | `/doctors/:id` | safe fields + future free slots + reviews (reviewer name/photo only) |
+| GET | `/doctors/:id/available-slots?from=&to=` | future, unbooked slots only (max 60 days) |
 | POST | `/webhook` | Stripe only; protected by signature verification |
 | * | `/api/auth/*` | better-auth handler. Over HTTP only `/sign-in/social`, `/callback/*`, `/error`, `/ok` are reachable (Google login); everything else returns 404. `role`, `status`, `needPasswordChange`, `isDeleted`, `deletedAt` can never be set from input (`input: false`) |
 
@@ -54,12 +55,13 @@ Someone else's record is answered with **404** (we don't confirm it exists) or *
 | doctor-schedules | PATCH | `/doctor-schedules/update-doctor-schedule` | DOCTOR | self |
 | doctor-schedules | DELETE | `/doctor-schedules/delete-my-schedule/:id` | DOCTOR | self |
 | doctor-schedules | GET | `/doctor-schedules`, `/doctor-schedules/:doctorId/schedule/:scheduleId` | ADMIN, SA | — |
-| appointments | POST | `/appointments/book-appointment` | PATIENT | self |
+| appointments | POST | `/appointments/book-appointment` | PATIENT | self; optional `Idempotency-Key` header |
 | appointments | POST | `/appointments/book-appointment-with-pay-later` | PATIENT | self |
-| appointments | POST | `/appointments/initiate-payment/:id` | PATIENT | own appointment |
+| appointments | POST | `/appointments/initiate-payment/:id` | PATIENT | own appointment, before the payment deadline |
+| appointments | PATCH | `/appointments/reschedule/:id` | PATIENT | own, until 2 h before start, same doctor |
 | appointments | GET | `/appointments/my-appointments` | PATIENT, DOCTOR | own only |
 | appointments | GET | `/appointments/my-single-appointment/:id` | PATIENT, DOCTOR | own only; someone else's id → 404 |
-| appointments | PATCH | `/appointments/change-appointment-status/:id` | DOCTOR, PATIENT, ADMIN, SA | owner only; ADMIN/SA → 403 until the state machine (5.13) |
+| appointments | PATCH | `/appointments/change-appointment-status/:id` | DOCTOR, PATIENT, ADMIN, SA | owner or admin, rules in `appointment.stateMachine.ts` (see docs/booking.md) |
 | patients | PATCH | `/patients/update-profile` | PATIENT | self; can delete only own reports; file links only from uploads |
 | prescriptions | GET | `/prescriptions` | ADMIN, SA | — |
 | prescriptions | POST | `/prescriptions` | DOCTOR | only the appointment's doctor |

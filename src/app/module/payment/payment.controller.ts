@@ -1,112 +1,49 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Request, Response } from "express";
+import Stripe from "stripe";
 import { envVars } from "../../config/env";
 import { stripe } from "../../config/stripe.config";
 import { PaymentService } from "./payment.service";
 import { sendResponse } from "../../shared/sendResponse";
+import AppError from "../../errorHelpers/AppError";
 
+// POST /webhook (raw body, see app.ts). Stripe retries any non-2xx answer for up to 3 days, so:
+// - bad signature           -> 400 (not from Stripe)
+// - our own 4xx (not found…) -> 200 + log (a retry would fail the same way)
+// - unexpected error        -> 500 (temporary problem, e.g. DB down: let Stripe retry)
 const handleStripeEventWebhook = async (req: Request, res: Response) => {
-  /**
-   * Get Stripe signature from request header
-   * Stripe sends this header automatically
-   * Used to verify request came from Stripe
-   */
   const signature = req.headers["stripe-signature"];
-
-  /**
-   * Get webhook secret from environment variable
-   * This secret comes from Stripe dashboard
-   */
   const webhookSecret = envVars.STRIPE.STRIPE_WEBHOOK_SECRET;
-
-  /**
-   * Print signature + secret for debugging
-   * Remove in production for security
-   */
-  // console.log(
-  //   signature,
-  //   webhookSecret,
-  //   "........................................",
-  // );
-
-  /**
-   * If signature missing OR secret missing
-   * request cannot be verified
-   */
   if (!signature || !webhookSecret) {
-    return res.status(400).json({
-      message: "Missing Stripe Signature or Webhook Secret",
-    });
+    return res.status(400).json({ success: false, message: "Missing Stripe signature" });
   }
 
-  // Variable to store verified Stripe event
-  let event;
-
+  let event: Stripe.Event;
   try {
-    /**
-     * Verify webhook payload using:
-     * req.body          => raw request body
-     * signature         => stripe-signature header
-     * webhookSecret     => your webhook secret
-     *
-     * If valid:
-     * event object returned
-     *
-     * If invalid:
-     * throws error
-     */
+    // verifies the payload really comes from Stripe and wasn't changed
     event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
-
-    /**
-     * Print verified Stripe event
-     */
-  } catch (err: any) {
-    /**
-     * Signature verification failed
-     * Maybe fake request or body changed
-     */
-    console.log(`⚠️ Webhook signature verification failed.`, err.message);
-
-    // Return 400 Bad Request
-    return res.sendStatus(400);
+  } catch (error) {
+    console.warn("[stripe-webhook] signature verification failed:", (error as Error).message);
+    return res.status(400).json({ success: false, message: "Invalid signature" });
   }
 
   try {
-    /**
-     * Send verified Stripe event
-     * to service layer for processing
-     *
-     * Example events:
-     * payment_intent.succeeded
-     * payment_failed
-     * refunded
-     */
     const result = await PaymentService.handleStripeEventWebhook(event);
-
-    /**
-     * Custom success response
-     * tells Stripe request handled successfully
-     */
     sendResponse(res, {
       httpStatusCode: 200,
       success: true,
-      message: "Event processed successfully",
+      message: "Event processed",
       data: result,
     });
-  } catch (error: any) {
-    /**
-     * If database update / service fails
-     */
-    console.log("failed in event", error.message);
-
-    /**
-     * Better to send response here also
-     * Otherwise Stripe may retry
-     */
-    return res.status(500).json({
-      success: false,
-      message: "Webhook processing failed",
-    });
+  } catch (error) {
+    if (error instanceof AppError && error.statusCode < 500) {
+      console.error(`[stripe-webhook] ${event.type} ${event.id} not processed:`, error.message);
+      return res.status(200).json({ success: false, message: error.message });
+    }
+    console.error(`[stripe-webhook] ${event.type} ${event.id} failed, Stripe will retry:`, error);
+    return res.status(500).json({ success: false, message: "Webhook processing failed" });
   }
 };
-export const PaymentController = { handleStripeEventWebhook };
+
+export const PaymentController = {
+  handleStripeEventWebhook,
+};

@@ -79,6 +79,21 @@ const loadEnvVariables = (): EnvConfig => {
       );
     }
   });
+  // Never mix Stripe modes: live keys only in production, test keys everywhere else
+  const stripeKey = process.env.STRIPE_SECRET_KEY as string;
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction && !stripeKey.startsWith("sk_live_") && process.env.ALLOW_STRIPE_TEST_IN_PRODUCTION !== "true") {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Production must use a live Stripe key (sk_live_...). Set ALLOW_STRIPE_TEST_IN_PRODUCTION=true only for a staging server.",
+    );
+  }
+  if (!isProduction && stripeKey.startsWith("sk_live_")) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "A live Stripe key (sk_live_...) is not allowed outside production. Use a test key (sk_test_...).",
+    );
+  }
   return {
     PORT: process.env.PORT,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,

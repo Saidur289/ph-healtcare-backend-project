@@ -6,22 +6,45 @@ model Appointment {
     createdAt      DateTime          @default(now())
     updatedAt      DateTime          @updatedAt
 
+    // booking / payment window
+    isPayLater      Boolean   @default(false)
+    // unpaid after this moment -> cancelled by the cron job
+    paymentDeadline DateTime?
+    // client-sent "Idempotency-Key": a retried booking returns the same appointment
+    idempotencyKey  String?
+
+    // lifecycle (see appointment.stateMachine.ts)
+    startedAt    DateTime?
+    completedAt  DateTime?
+    cancelledAt  DateTime?
+    cancelledBy  CancelledBy?
+    cancelReason String?
+
+    // reminder emails, so each one is sent only once
+    reminder24hSentAt DateTime?
+    reminder1hSentAt  DateTime?
+
+    // Restrict: medical and financial history must never disappear through a cascade
     patientId String
-    patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+    patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
     doctorId String
-    doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+    doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Restrict)
 
     scheduleId String
-    schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+    schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
 
     prescription Prescription?
     review       Review?
     payment      Payment?
 
+    // only ONE active (not cancelled) appointment per doctor slot - enforced by the database
+    @@unique([doctorId, scheduleId], map: "appointment_active_slot", where: { status: { not: "CANCELED" } })
+    @@unique([patientId, idempotencyKey])
     @@index([patientId])
     @@index([doctorId])
     @@index([scheduleId])
     @@index([status])
+    @@index([status, paymentStatus, paymentDeadline])
     @@map("appointments")
 }

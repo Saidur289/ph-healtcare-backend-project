@@ -7,6 +7,9 @@ model Schedule {
   doctorSchedules DoctorSchedules[]
   appointments    Appointment[]
 
+  // all times are stored in UTC; the same slot can't exist twice
+  @@unique([startDateTime, endDateTime])
+  @@index([startDateTime])
   @@map("schedules")
 }
 

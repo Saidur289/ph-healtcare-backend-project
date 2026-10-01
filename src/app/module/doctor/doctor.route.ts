@@ -20,6 +20,7 @@ router.get(
 // public (safe fields only)
 router.get("/", DoctorController.getAllDoctors);
 router.get("/:id", DoctorController.getDoctorById);
+router.get("/:id/available-slots", DoctorController.getAvailableSlots);
 router.patch(
   "/:id",
   checkAuth(Role.ADMIN, Role.DOCTOR, Role.SUPER_ADMIN),

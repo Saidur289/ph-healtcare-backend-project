@@ -3,21 +3,36 @@ import { sendResponse } from "../../shared/sendResponse";
 import { AppointmentService } from "./appointment.service";
 import { StatusCodes } from "http-status-codes";
 import { catchAsync } from "../../shared/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+
+// Optional "Idempotency-Key" header: the same key returns the same booking (double click / retry)
+const getIdempotencyKey = (req: Request) => {
+  const key = req.get("Idempotency-Key");
+  if (key === undefined) return undefined;
+  if (!/^[A-Za-z0-9_-]{8,100}$/.test(key)) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Idempotency-Key must be 8-100 letters, numbers, '-' or '_'",
+    );
+  }
+  return key;
+};
 
 const bookAppointment = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user;
-  const payload = req.body;
-  const result = await AppointmentService.bookAppointment(user, payload);
+  const result = await AppointmentService.bookAppointment(
+    req.user,
+    req.body,
+    getIdempotencyKey(req),
+  );
   sendResponse(res, {
-    httpStatusCode: StatusCodes.OK,
+    httpStatusCode: StatusCodes.CREATED,
     success: true,
-    message: "Appointment created successfully",
+    message: "Appointment booked. Please complete the payment.",
     data: result,
   });
 });
 const getMyAppointment = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user;
-  const result = await AppointmentService.getMyAppointments(user);
+  const result = await AppointmentService.getMyAppointments(req.user);
   sendResponse(res, {
     httpStatusCode: StatusCodes.OK,
     success: true,
@@ -27,30 +42,26 @@ const getMyAppointment = catchAsync(async (req: Request, res: Response) => {
 });
 const getMySingleAppointment = catchAsync(
   async (req: Request, res: Response) => {
-    const user = req.user;
-    const appointmentId = req.params.id;
     const result = await AppointmentService.getMySingleAppointment(
-      user,
-      appointmentId as string,
+      req.user,
+      req.params.id as string,
     );
     sendResponse(res, {
       httpStatusCode: StatusCodes.OK,
       success: true,
-      message: "Appointments fetched successfully",
+      message: "Appointment fetched successfully",
       data: result,
     });
   },
 );
 const changeAppointmentStatus = catchAsync(
   async (req: Request, res: Response) => {
-    const user = req.user;
-    const appointmentId = req.params.id;
-    // the body is { status }; passing the whole object compared an object with a string
-    const { status } = req.body;
+    const { status, reason } = req.body;
     const result = await AppointmentService.changeAppointmentStatus(
-      appointmentId as string,
+      req.params.id as string,
       status,
-      user,
+      req.user,
+      reason,
     );
     sendResponse(res, {
       httpStatusCode: StatusCodes.OK,
@@ -60,28 +71,40 @@ const changeAppointmentStatus = catchAsync(
     });
   },
 );
-const bookAppointmentWithPayLater = catchAsync(
+const rescheduleAppointment = catchAsync(
   async (req: Request, res: Response) => {
-    const user = req.user;
-    const payload = req.body;
-    const result = await AppointmentService.bookAppointmentWithPayLater(
-      payload,
-      user,
+    const result = await AppointmentService.rescheduleAppointment(
+      req.user,
+      req.params.id as string,
+      req.body.scheduleId,
     );
     sendResponse(res, {
       httpStatusCode: StatusCodes.OK,
       success: true,
-      message: "Appointment created with payment with later",
+      message: "Appointment rescheduled successfully",
+      data: result,
+    });
+  },
+);
+const bookAppointmentWithPayLater = catchAsync(
+  async (req: Request, res: Response) => {
+    const result = await AppointmentService.bookAppointmentWithPayLater(
+      req.body,
+      req.user,
+      getIdempotencyKey(req),
+    );
+    sendResponse(res, {
+      httpStatusCode: StatusCodes.CREATED,
+      success: true,
+      message: "Appointment booked. Please pay before the payment deadline.",
       data: result,
     });
   },
 );
 const initiatePayment = catchAsync(async (req: Request, res: Response) => {
-  const appointmentId = req.params.id;
-  const user = req.user;
   const result = await AppointmentService.initiatePayment(
-    appointmentId as string,
-    user,
+    req.params.id as string,
+    req.user,
   );
   sendResponse(res, {
     httpStatusCode: StatusCodes.OK,
@@ -96,6 +119,7 @@ export const AppointmentController = {
   getMyAppointment,
   getMySingleAppointment,
   changeAppointmentStatus,
+  rescheduleAppointment,
   bookAppointmentWithPayLater,
   initiatePayment,
 };

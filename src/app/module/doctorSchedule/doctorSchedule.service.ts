@@ -2,6 +2,9 @@ import { Prisma } from "../../../generated/prisma/client";
 import { IQueryParams } from "../../interface/query.interface";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
+import { StatusCodes } from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { getDoctorProfileOrThrow } from "../../utils/profile";
 import { QueryBuilder } from "../../utils/QueryBuilder";
 import {
   doctorScheduleFilterableFields,
@@ -13,21 +16,37 @@ import {
   IUpdateDoctorSchedule,
 } from "./doctorSchedule.interface";
 
+// every id must be an existing schedule that has not started yet
+const assertFutureSchedules = async (scheduleIds: string[]) => {
+  const uniqueIds = [...new Set(scheduleIds)];
+  if (uniqueIds.length === 0) return;
+  const schedules = await prisma.schedule.findMany({
+    where: { id: { in: uniqueIds } },
+    select: { id: true, startDateTime: true },
+  });
+  if (schedules.length !== uniqueIds.length) {
+    throw new AppError(StatusCodes.NOT_FOUND, "One or more schedules were not found");
+  }
+  if (schedules.some((schedule) => schedule.startDateTime.getTime() <= Date.now())) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "You can only choose future time slots");
+  }
+};
+
 const createDoctorSchedule = async (
   user: IRequestUser,
   payload: ICreateDoctorSchedule,
 ) => {
-  const doctorData = await prisma.doctor.findUniqueOrThrow({
-    where: {
-      email: user.email,
-    },
-  });
+  const doctorData = await getDoctorProfileOrThrow(user);
+  await assertFutureSchedules(payload.scheduleIds);
 
-  const doctorScheduleData = payload.scheduleIds.map((scheduleId) => ({
-    doctorId: doctorData.id,
-    scheduleId,
-  }));
-  await prisma.doctorSchedules.createMany({ data: doctorScheduleData });
+  await prisma.doctorSchedules.createMany({
+    data: payload.scheduleIds.map((scheduleId) => ({
+      doctorId: doctorData.id,
+      scheduleId,
+    })),
+    // slots the doctor already has are simply kept
+    skipDuplicates: true,
+  });
   const result = await prisma.doctorSchedules.findMany({
     where: { doctorId: doctorData.id, scheduleId: { in: payload.scheduleIds } },
     include: { schedule: true },
@@ -93,45 +112,70 @@ const getDoctorScheduleById = async (doctorId: string, scheduleId: string) => {
   });
   return result;
 };
+const assertNotBooked = async (doctorId: string, scheduleIds: string[]) => {
+  if (scheduleIds.length === 0) return;
+  const booked = await prisma.doctorSchedules.count({
+    where: { doctorId, scheduleId: { in: scheduleIds }, isBooked: true },
+  });
+  if (booked > 0) {
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      `${booked} of these time slots already have an appointment and cannot be removed. Cancel the appointment first.`,
+    );
+  }
+};
+
 const updateDoctorSchedule = async (
   user: IRequestUser,
   payload: IUpdateDoctorSchedule,
 ) => {
-  const doctorData = await prisma.doctor.findUniqueOrThrow({
-    where: { email: user.email },
-  });
+  const doctorData = await getDoctorProfileOrThrow(user);
   const deleteIds = payload.scheduleIds
     .filter((schedule) => schedule.shouldDelete === true)
     .map((schedule) => schedule.scheduleId);
   const createIds = payload.scheduleIds
     .filter((schedule) => schedule.shouldDelete === false)
     .map((schedule) => schedule.scheduleId);
+
+  await assertNotBooked(doctorData.id, deleteIds);
+  await assertFutureSchedules(createIds);
+
   const result = await prisma.$transaction(async (tx) => {
-    await tx.doctorSchedules.deleteMany({
+    // isBooked: false again inside the transaction, in case a patient booked meanwhile
+    const removed = await tx.doctorSchedules.deleteMany({
       where: {
         isBooked: false,
         doctorId: doctorData.id,
         scheduleId: { in: deleteIds },
       },
     });
-    const doctorScheduleData = createIds.map((scheduleId) => ({
-      doctorId: doctorData.id,
-      scheduleId,
-    }));
-    const result = await tx.doctorSchedules.createMany({
-      data: doctorScheduleData,
+    const added = await tx.doctorSchedules.createMany({
+      data: createIds.map((scheduleId) => ({
+        doctorId: doctorData.id,
+        scheduleId,
+      })),
+      skipDuplicates: true,
     });
-    return result;
+    return { removed: removed.count, added: added.count };
   });
   return result;
 };
+
 const deleteMyDoctorSchedule = async (id: string, user: IRequestUser) => {
-  const doctorData = await prisma.doctor.findUniqueOrThrow({
-    where: { email: user.email },
+  const doctorData = await getDoctorProfileOrThrow(user);
+  const slot = await prisma.doctorSchedules.findUnique({
+    where: { doctorId_scheduleId: { doctorId: doctorData.id, scheduleId: id } },
   });
+  if (!slot) {
+    throw new AppError(StatusCodes.NOT_FOUND, "This time slot is not in your schedule");
+  }
+  await assertNotBooked(doctorData.id, [id]);
   const result = await prisma.doctorSchedules.deleteMany({
     where: { isBooked: false, doctorId: doctorData.id, scheduleId: id },
   });
+  if (result.count !== 1) {
+    throw new AppError(StatusCodes.CONFLICT, "This time slot was just booked and cannot be removed");
+  }
   return result;
 };
 export const DoctorScheduleService = {
