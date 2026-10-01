@@ -70,7 +70,8 @@ This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 
 - [x] **0.4 [S]** Fix `server/tsconfig.json`: the `ignoreDeprecations: "6.0"` value is invalid on TypeScript 5.9. Remove it or set it to `"5.0"`.
   - Done when `npx tsc --noEmit` passes.
   - _Done: set to "5.0"; `tsc --noEmit` is clean._
-- [ ] **0.5 [C]** Delete the stale `client/.next` folder and confirm `npx tsc --noEmit` shows only real errors.
+- [x] **0.5 [C]** Delete the stale `client/.next` folder and confirm `npx tsc --noEmit` shows only real errors.
+  - _Done: stale .next removed; tsc shows no errors._
 - [ ] **0.6 [S]** Add a `start` script (`node dist/server.js`) and make the compiled output runnable. With ESM and `moduleResolution: bundler`, either:
   - switch to `module/moduleResolution: NodeNext` and add `.js` extensions to imports, or
   - bundle with `tsup`/`esbuild`.
@@ -730,13 +731,17 @@ What the design looks like:
 - [x] **8.D5 [C]** Doctor dashboard home = the shot itself: greeting, 3 stat cards (appointments today, total patients, today's earnings), then upcoming appointments with **Check In** (in-person) or **Join Now** (video) buttons.
   - _Done: greeting + date, Appointments Today / Total Patients / Today's Earnings with vs-yesterday trends (stats API now returns today/yesterday numbers in APP_TIMEZONE, default Asia/Dhaka, queries in parallel), Upcoming Appointments with Join Now, rating and status cards. There is no in-person visit type in this app, so there is no Check In button._
 - [ ] **8.D6 [C]** Apply the same look to the patient and admin dashboards and the auth pages, so the whole app feels like one product.
-  - _In progress: patient and admin homes done. The auth pages already use the new tokens and font; a full restyle of the auth and list pages is next._
+  - _In progress: patient and admin homes, auth pages (navy brand panel + form) and public pages done. Dashboard list pages still need the restyle._
 
 ### Public
-- [ ] **8.1 [C]** Home page: hero, search by specialty or doctor, featured doctors, how-it-works section and footer. Replace "Hello World".
-- [ ] **8.2 [C]** `/consultation`: search, filters (specialty, fee, rating, gender), sorting and pagination, with the filters stored in the URL.
-- [ ] **8.3 [C]** `/consultation/doctor/[id]`: profile, available-slots calendar (from 5.9), reviews and a Book button.
-- [ ] **8.4 [C]** Decide what to do with `diagnostics`, `health-plans`, `medicine` and `ngos`: build them or **remove** them from the nav. Don't ship empty pages.
+- [x] **8.1 [C]** Home page: hero, search by specialty or doctor, featured doctors, how-it-works section and footer. Replace "Hello World".
+  - _Done: public header (Dashboard button when logged in) + navy footer; hero with search, specialty chips, top-rated doctors, how-it-works, CTA._
+- [x] **8.2 [C]** `/consultation`: search, filters (specialty, fee, rating, gender), sorting and pagination, with the filters stored in the URL.
+  - _Done: DoctorCard grid, filters in the URL (gender, specialty, fee, new rating filter averageRating[gte]), sort, pagination, skeleton and empty state; removed the non-existent OTHER gender; fees shown in BDT._
+- [x] **8.3 [C]** `/consultation/doctor/[id]`: profile, available-slots calendar (from 5.9), reviews and a Book button.
+  - _Done: profile header with availability, stars and a fee box with Book, free slots grouped by day, star reviews, About card._
+- [x] **8.4 [C]** Decide what to do with `diagnostics`, `health-plans`, `medicine` and `ngos`: build them or **remove** them from the nav. Don't ship empty pages.
+  - _Done: removed diagnostics, health-plans, medicine and ngos (no backend, nothing linked to them)._
 
 ### Patient (`/dashboard`)
 - [x] **8.5 [C]** Dashboard home: upcoming appointment card, quick actions and stats.
