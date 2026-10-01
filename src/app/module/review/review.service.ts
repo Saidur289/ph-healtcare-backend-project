@@ -62,6 +62,7 @@ const createReview = async (
       _avg: {
         rating: true,
       },
+      _count: { _all: true },
     });
     await tx.doctor.update({
       where: {
@@ -70,6 +71,8 @@ const createReview = async (
       data: {
         // no reviews left -> average is null, store 0
         averageRating: averageRating._avg.rating ?? 0,
+        // same transaction as the review change, so count and average never disagree
+        reviewCount: averageRating._count._all,
       },
     });
     return reviewData;
@@ -172,6 +175,7 @@ const updateReview = async (
       _avg: {
         rating: true,
       },
+      _count: { _all: true },
     });
     await tx.doctor.update({
       where: {
@@ -180,6 +184,8 @@ const updateReview = async (
       data: {
         // no reviews left -> average is null, store 0
         averageRating: averageRating._avg.rating ?? 0,
+        // same transaction as the review change, so count and average never disagree
+        reviewCount: averageRating._count._all,
       },
     });
     return reviewData;
@@ -222,6 +228,7 @@ const deleteReview = async (user: IRequestUser, reviewId: string) => {
       _avg: {
         rating: true,
       },
+      _count: { _all: true },
     });
     await tx.doctor.update({
       where: {
@@ -230,6 +237,8 @@ const deleteReview = async (user: IRequestUser, reviewId: string) => {
       data: {
         // no reviews left -> average is null, store 0
         averageRating: averageRating._avg.rating ?? 0,
+        // same transaction as the review change, so count and average never disagree
+        reviewCount: averageRating._count._all,
       },
     });
     return deleteData;

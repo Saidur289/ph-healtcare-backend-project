@@ -231,6 +231,13 @@
         <div class="section">
           <div class="instructions">
             <div class="instructions-title">💊 Instructions & Medications</div>
+            <% if (typeof medicines !== "undefined" && medicines.length) { %>
+            <ul class="instructions-content">
+              <% medicines.forEach(function (m) { %>
+              <li><strong><%= m.name %></strong> - <%= m.dose %>, <%= m.frequency %>, <%= m.duration %><% if (m.notes) { %> (<%= m.notes %>)<% } %></li>
+              <% }) %>
+            </ul>
+            <% } %>
             <div class="instructions-content"><%= instructions %></div>
           </div>
         </div>

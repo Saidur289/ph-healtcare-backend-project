@@ -18,6 +18,7 @@ export const doctorPublicSelect = {
     registrationNumber: true,
     appointmentFee: true,
     averageRating: true,
+    reviewCount: true,
     createdAt: true,
     specialties: {
         select: {

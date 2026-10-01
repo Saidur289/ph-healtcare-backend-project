@@ -14,6 +14,7 @@ import { PaymentController } from "./app/module/payment/payment.controller";
 import { AppointmentService } from "./app/module/appointment/appointment.service";
 import { AppointmentReminder } from "./app/module/appointment/appointment.reminder";
 import { PaymentService } from "./app/module/payment/payment.service";
+import { PrescriptionService } from "./app/module/prescription/prescription.service";
 
 const app = express();
 //middleware for parsing query string
@@ -64,6 +65,7 @@ cron.schedule("*/5 * * * *", async () => {
     ["1h reminders", () => AppointmentReminder.sendReminders("1h")],
     ["24h reminders", () => AppointmentReminder.sendReminders("24h")],
     ["missing invoices", () => PaymentService.retryMissingInvoices()],
+    ["missing prescription PDFs/emails", () => PrescriptionService.retryPrescriptionDelivery()],
   ];
   for (const [name, job] of jobs) {
     try {

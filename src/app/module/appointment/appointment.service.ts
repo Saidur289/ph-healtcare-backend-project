@@ -21,7 +21,9 @@ import {
   PAY_LATER_DUE_BEFORE_START_MIN,
   PAY_LATER_MIN_LEAD_MIN,
   PAY_NOW_WINDOW_MIN,
+  START_ALLOWED_BEFORE_MIN,
 } from "./appointment.constant";
+import { assertVideoConfigured, createMeetingToken, ensureRoom } from "../video/daily";
 import { assertTransitionAllowed, TAppointmentActor } from "./appointment.stateMachine";
 import {
   createCheckoutSession,
@@ -265,7 +267,7 @@ const getMyAppointments = async (user: IRequestUser) => {
     if (!patient) throw new AppError(StatusCodes.NOT_FOUND, "Patient profile not found");
     return prisma.appointment.findMany({
       where: { patientId: patient.id },
-      include: { doctor: true, schedule: true, payment: true },
+      include: { doctor: true, schedule: true, payment: true, review: { select: { id: true, rating: true } }, prescription: { select: { id: true, pdfUrl: true } } },
       orderBy: { schedule: { startDateTime: "desc" } },
     });
   }
@@ -273,7 +275,7 @@ const getMyAppointments = async (user: IRequestUser) => {
   if (!doctor) throw new AppError(StatusCodes.NOT_FOUND, "Doctor profile not found");
   return prisma.appointment.findMany({
     where: { doctorId: doctor.id },
-    include: { patient: true, schedule: true, payment: true },
+    include: { patient: true, schedule: true, payment: true, review: { select: { id: true, rating: true } }, prescription: { select: { id: true, pdfUrl: true } } },
     orderBy: { schedule: { startDateTime: "desc" } },
   });
 };
@@ -524,6 +526,76 @@ const rescheduleAppointment = async (
   });
 };
 
+// ------------------------------------------------------------------ video call
+
+// Returns a Daily.co room url + short-lived token for this appointment's patient or doctor.
+// Allowed only when paid, SCHEDULED/INPROGRESS, and from 10 min before start until the slot ends.
+// The doctor joining moves a SCHEDULED appointment to INPROGRESS.
+const joinVideoCall = async (user: IRequestUser, appointmentId: string) => {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    include: {
+      schedule: true,
+      doctor: { select: { userId: true, name: true } },
+      patient: { select: { userId: true, name: true } },
+    },
+  });
+  const actor = appointment ? getActor(user, appointment) : null;
+  if (!appointment || (actor !== "OWNER_DOCTOR" && actor !== "OWNER_PATIENT")) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Appointment not found");
+  }
+  if (appointment.paymentStatus !== PaymentStatus.PAID) {
+    throw new AppError(StatusCodes.CONFLICT, "The appointment must be paid before the call");
+  }
+  if (
+    appointment.status !== AppointmentStatus.SCHEDULED &&
+    appointment.status !== AppointmentStatus.INPROGRESS
+  ) {
+    throw new AppError(StatusCodes.CONFLICT, `This appointment is ${appointment.status}`);
+  }
+  const now = Date.now();
+  const opensAt = appointment.schedule.startDateTime.getTime() - minutes(START_ALLOWED_BEFORE_MIN);
+  const closesAt = appointment.schedule.endDateTime.getTime();
+  if (now < opensAt) {
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      `The call opens ${START_ALLOWED_BEFORE_MIN} minutes before the appointment`,
+    );
+  }
+  if (now > closesAt) {
+    throw new AppError(StatusCodes.CONFLICT, "This appointment slot is already over");
+  }
+
+  // check the provider BEFORE changing anything, so a missing key never starts the appointment
+  assertVideoConfigured();
+  if (actor === "OWNER_DOCTOR" && appointment.status === AppointmentStatus.SCHEDULED) {
+    await prisma.appointment.updateMany({
+      where: { id: appointment.id, status: AppointmentStatus.SCHEDULED },
+      data: { status: AppointmentStatus.INPROGRESS, startedAt: new Date() },
+    });
+  }
+
+  // a little grace after the slot so a running consultation isn't cut mid-sentence
+  const expiresAt = new Date(closesAt + minutes(15));
+  const room = await ensureRoom(appointment.videoCallingId, expiresAt);
+  const isDoctor = actor === "OWNER_DOCTOR";
+  const token = await createMeetingToken({
+    roomName: room.name,
+    userName: isDoctor ? `Dr. ${appointment.doctor.name}` : appointment.patient.name,
+    isOwner: isDoctor,
+    notBefore: new Date(opensAt),
+    expiresAt,
+  });
+  return {
+    roomUrl: room.url,
+    token,
+    role: isDoctor ? "DOCTOR" : "PATIENT",
+    expiresAt,
+    slotStart: appointment.schedule.startDateTime,
+    slotEnd: appointment.schedule.endDateTime,
+  };
+};
+
 // ------------------------------------------------------------------ payment
 
 const initiatePayment = async (appointmentId: string, user: IRequestUser) => {
@@ -644,6 +716,7 @@ export const AppointmentService = {
   getMySingleAppointment,
   changeAppointmentStatus,
   rescheduleAppointment,
+  joinVideoCall,
   bookAppointmentWithPayLater,
   initiatePayment,
   cancelUnpaidAppointment,

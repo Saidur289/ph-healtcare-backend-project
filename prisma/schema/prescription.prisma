@@ -5,6 +5,10 @@ model Prescription {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   pdfUrl        String?
+  // [{ name, dose, frequency, duration, notes? }] - validated by prescription.validation.ts
+  medicines     Json        @default("[]")
+  // set when the PDF email reached the patient; a cron retries missing ones
+  emailSentAt   DateTime?
   appointmentId String      @unique
   // Restrict: a prescription is a medical record and must never be cascade-deleted
   appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict, onUpdate: Cascade)

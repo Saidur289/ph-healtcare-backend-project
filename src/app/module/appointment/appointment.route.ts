@@ -35,6 +35,11 @@ router.post(
   validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointmentWithPayLater,
 );
+router.get(
+  "/:id/join",
+  checkAuth(Role.PATIENT, Role.DOCTOR),
+  AppointmentController.joinVideoCall,
+);
 router.patch(
   "/reschedule/:id",
   checkAuth(Role.PATIENT),

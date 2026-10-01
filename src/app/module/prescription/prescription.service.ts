@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { StatusCodes } from "http-status-codes";
 import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
@@ -13,359 +12,225 @@ import {
   ICreatePrescriptionPayload,
   IUpdatePrescriptionPayload,
 } from "./prescription.interface";
-import { getDoctorProfileOrThrow } from "../../utils/profile";
+import { getDoctorProfileOrThrow, getPatientProfileOrThrow } from "../../utils/profile";
+import { AppointmentStatus, Role } from "../../../generated/prisma/enums";
+import { Prisma } from "../../../generated/prisma/client";
+import { TMedicine } from "./prescription.validation";
 
-const givePrescription = async (
-  user: IRequestUser,
-  payload: ICreatePrescriptionPayload,
-) => {
+// PRESCRIPTION_DELIVERY=off skips PDF upload + email (tests / CI)
+const isDeliveryEnabled = () => process.env.PRESCRIPTION_DELIVERY !== "off";
 
-  // Find logged-in doctor
-  const doctorData = await getDoctorProfileOrThrow(user);
+const prescriptionInclude = {
+  patient: { select: { id: true, name: true, email: true } },
+  doctor: { select: { id: true, name: true, email: true, designation: true } },
+  appointment: { select: { id: true, status: true, schedule: true } },
+} satisfies Prisma.PrescriptionInclude;
 
+// ------------------------------------------------------------------ delivery (PDF + email)
 
-  // Find appointment with relations
-  const appointmentData = await prisma.appointment.findFirstOrThrow({
-    where: {
-      id: payload.appointmentId,
-    },
+// Builds the PDF, replaces the stored one and emails it. Runs AFTER the prescription is saved;
+// any failure is logged and retried by retryPrescriptionDelivery(), never undoing the save.
+const deliverPrescription = async (prescriptionId: string, reason: "new" | "updated") => {
+  if (!isDeliveryEnabled()) return;
+  const prescription = await prisma.prescription.findUniqueOrThrow({
+    where: { id: prescriptionId },
     include: {
       patient: true,
-      doctor: {
-        include: {
-          specialties: {
-            include: {
-              specialty: true,
-            },
-          },
-        },
-      },
-      schedule: {
-        include: {
-          doctorSchedules: true,
-        },
-      },
+      doctor: { include: { specialties: { include: { specialty: true } } } },
+      appointment: { include: { schedule: true } },
     },
   });
+  const medicines = prescription.medicines as unknown as TMedicine[];
+  const pdfBuffer = await generatePrescriptionPDF({
+    doctorName: prescription.doctor.name,
+    doctorEmail: prescription.doctor.email,
+    patientName: prescription.patient.name,
+    patientEmail: prescription.patient.email,
+    followUpDate: prescription.followUpDate,
+    instructions: prescription.instructions,
+    medicines,
+    prescriptionId: prescription.id,
+    appointmentDate: prescription.appointment.schedule.startDateTime,
+    createdAt: prescription.createdAt,
+  });
+  const fileName = `Prescription_${prescription.id}_${Date.now()}.pdf`;
+  const uploaded = await uploadFileToCloudinary(pdfBuffer, fileName);
+  const oldUrl = prescription.pdfUrl;
+  await prisma.prescription.update({
+    where: { id: prescription.id },
+    data: { pdfUrl: uploaded.secure_url },
+  });
+  if (oldUrl && oldUrl !== uploaded.secure_url) {
+    await deleteFileFromCloudinary(oldUrl).catch(() => undefined);
+  }
 
+  await sendEmail({
+    to: prescription.patient.email,
+    subject:
+      reason === "new"
+        ? `You have received a new prescription from Dr. ${prescription.doctor.name}`
+        : `Your prescription from Dr. ${prescription.doctor.name} has been updated`,
+    templateName: "prescription",
+    templateData: {
+      doctorName: prescription.doctor.name,
+      patientName: prescription.patient.name,
+      specialization:
+        prescription.doctor.specialties.map((s) => s.specialty.title).join(", ") || "Healthcare Service",
+      appointmentDate: prescription.appointment.schedule.startDateTime.toLocaleString(),
+      issuedDate: new Date().toLocaleDateString(),
+      prescriptionId: prescription.id,
+      instructions: prescription.instructions,
+      medicines,
+      followUpDate: prescription.followUpDate.toLocaleDateString(),
+      pdfUrl: uploaded.secure_url,
+    },
+    attachments: [{ filename: fileName, content: pdfBuffer, contentType: "application/pdf" }],
+  });
+  await prisma.prescription.update({
+    where: { id: prescription.id },
+    data: { emailSentAt: new Date() },
+  });
+};
 
-  // Authorization check
-  if (appointmentData.doctorId !== doctorData.id) {
+const queueDelivery = (prescriptionId: string, reason: "new" | "updated") => {
+  setImmediate(() => {
+    deliverPrescription(prescriptionId, reason).catch((error) =>
+      console.error(`[prescription] delivery of ${prescriptionId} failed:`, error?.message),
+    );
+  });
+};
+
+// cron: prescriptions whose PDF or email didn't go out within 10 minutes
+const retryPrescriptionDelivery = async () => {
+  if (!isDeliveryEnabled()) return 0;
+  const pending = await prisma.prescription.findMany({
+    where: {
+      OR: [{ pdfUrl: null }, { emailSentAt: null }],
+      updatedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
+    },
+    select: { id: true },
+    take: 20,
+  });
+  for (const { id } of pending) {
+    await deliverPrescription(id, "new").catch((error) =>
+      console.error(`[prescription] retry for ${id} failed:`, error?.message),
+    );
+  }
+  return pending.length;
+};
+
+// ------------------------------------------------------------------ doctor actions
+
+// Only the appointment's own doctor, only once the consultation started (INPROGRESS) or
+// finished (COMPLETED), and only one prescription per appointment.
+const givePrescription = async (user: IRequestUser, payload: ICreatePrescriptionPayload) => {
+  const doctorData = await getDoctorProfileOrThrow(user);
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: payload.appointmentId },
+    select: { id: true, doctorId: true, patientId: true, status: true },
+  });
+  if (!appointment || appointment.doctorId !== doctorData.id) {
+    throw new AppError(StatusCodes.FORBIDDEN, "You can only write prescriptions for your own appointments");
+  }
+  if (
+    appointment.status !== AppointmentStatus.INPROGRESS &&
+    appointment.status !== AppointmentStatus.COMPLETED
+  ) {
     throw new AppError(
-      StatusCodes.FORBIDDEN,
-      "You can only write prescriptions for your own appointments",
+      StatusCodes.CONFLICT,
+      "A prescription can be written once the consultation has started or finished",
     );
   }
 
-
-  // Check duplicate prescription
-  const isAlreadyPrescribed = await prisma.prescription.findFirst({
-    where: {
-      appointmentId: payload.appointmentId,
-    },
-  });
-
-  if (isAlreadyPrescribed) {
-    throw new AppError(StatusCodes.BAD_REQUEST, "Prescription already exists");
-  }
-
-
-  const followUpDate = new Date(payload.followUpDate);
-
-  // 1. Save the prescription first. Slow work (PDF, upload, email) happens after the
-  //    commit, so a PDF/Cloudinary/SMTP problem can never roll back the doctor's prescription.
-  const prescription = await prisma.prescription.create({
-    data: {
-      appointmentId: appointmentData.id,
-      followUpDate,
-      instructions: payload.instructions,
-      doctorId: doctorData.id,
-      patientId: appointmentData.patientId,
-    },
-  });
-
-  // 2. Generate + upload the PDF
-  let result = prescription;
-  let pdfBuffer: Buffer | undefined;
-  let pdfUrl: string | undefined;
-  const fileName = `Prescription_${Date.now()}.pdf`;
+  let prescription;
   try {
-    pdfBuffer = await generatePrescriptionPDF({
-      doctorName: appointmentData.doctor.name,
-      doctorEmail: appointmentData.doctor.email,
-      patientName: appointmentData.patient.name,
-      patientEmail: appointmentData.patient.email,
-      followUpDate,
-      instructions: payload.instructions,
-      prescriptionId: prescription.id,
-      appointmentDate: appointmentData.schedule.startDateTime,
-      createdAt: prescription.createdAt,
-    });
-    const uploadedFile = await uploadFileToCloudinary(pdfBuffer, fileName);
-    pdfUrl = uploadedFile.secure_url;
-    result = await prisma.prescription.update({
-      where: { id: prescription.id },
-      data: { pdfUrl },
-    });
-  } catch (error) {
-    console.error("Failed to generate/upload prescription PDF:", error);
-  }
-
-  // 3. Email the patient (never fails the request)
-  try {
-    const patient = appointmentData.patient;
-    const doctor = appointmentData.doctor;
-    await sendEmail({
-      to: patient.email,
-      subject: `You have received a new prescription from Dr. ${doctor.name}`,
-      templateName: "prescription",
-      templateData: {
-        doctorName: doctor.name,
-        patientName: patient.name,
-        specialization: doctor.specialties
-          .map((s) => s.specialty.title)
-          .join(", "),
-        appointmentDate: new Date(
-          appointmentData.schedule.startDateTime,
-        ).toLocaleString(),
-        issuedDate: new Date().toLocaleDateString(),
-        prescriptionId: prescription.id,
+    prescription = await prisma.prescription.create({
+      data: {
+        appointmentId: appointment.id,
+        followUpDate: new Date(payload.followUpDate),
         instructions: payload.instructions,
-        followUpDate: followUpDate.toLocaleDateString(),
-        pdfUrl: pdfUrl ?? "",
+        medicines: payload.medicines as unknown as Prisma.InputJsonValue,
+        doctorId: doctorData.id,
+        patientId: appointment.patientId,
       },
-      attachments: pdfBuffer
-        ? [
-            {
-              filename: fileName,
-              content: pdfBuffer,
-              contentType: "application/pdf",
-            },
-          ]
-        : undefined,
+      include: prescriptionInclude,
     });
   } catch (error) {
-    console.error("Failed to send prescription email:", error);
+    // appointmentId is unique: a second prescription for the same appointment
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError(StatusCodes.CONFLICT, "This appointment already has a prescription. Edit it instead.");
+    }
+    throw error;
   }
+  queueDelivery(prescription.id, "new");
+  return prescription;
+};
 
-  return result;
-};
-const myPrescriptions = async (user: IRequestUser) => {
-  const userExists = await prisma.user.findUniqueOrThrow({
-    where: {
-      email: user.email,
-    },
-  });
-  if (!userExists) {
-    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
-  }
-  if (userExists.role === "DOCTOR") {
-    const prescriptions = await prisma.prescription.findMany({
-      // prescriptions store the Doctor profile id, not the User id
-      where: {
-        doctor: { userId: userExists.id },
-      },
-      include: {
-        patient: true,
-        doctor: true,
-        appointment: {
-          include: {
-            schedule: true,
-          },
-        },
-      },
-    });
-    return prescriptions;
-  }
-  if (userExists.role === "PATIENT") {
-    const prescriptions = await prisma.prescription.findMany({
-      where: { patient: { userId: userExists.id } },
-      include: {
-        patient: true,
-        doctor: true,
-        appointment: {
-          include: {
-            schedule: true,
-          },
-        },
-      },
-    });
-    return prescriptions;
-  }
-};
-const getAllPrescriptions = async () => {
-  const prescriptions = await prisma.prescription.findMany({
-    include: {
-      patient: true,
-      doctor: true,
-      appointment: true,
-    },
-  });
-  return prescriptions;
-};
 const updatePrescription = async (
   user: IRequestUser,
   prescriptionId: string,
   payload: IUpdatePrescriptionPayload,
 ) => {
-  const userExists = await prisma.user.findUnique({
-    where: {
-      email: user.email,
-    },
-  });
-  if (!userExists) {
-    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
+  const doctorData = await getDoctorProfileOrThrow(user);
+  const existing = await prisma.prescription.findUnique({ where: { id: prescriptionId } });
+  if (!existing || existing.doctorId !== doctorData.id) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Prescription not found");
   }
-  const prescriptionData = await prisma.prescription.findUniqueOrThrow({
-    where: {
-      id: prescriptionId,
-    },
-    include: {
-      doctor: true,
-      patient: true,
-      appointment: {
-        include: {
-          schedule: true,
-        },
-      },
-    },
-  });
-  if (prescriptionData.doctor.email !== user.email) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      "You are not authorized to update this prescription",
-    );
-  }
-  // Update prescription
-  const updatedInstructions =
-    payload.instructions ?? prescriptionData.instructions;
-  const updatedFollowUpDate = payload.followUpDate
-    ? new Date(payload.followUpDate)
-    : prescriptionData.followUpDate;
-  // upload new PDF
-  const pdfBuffer = await generatePrescriptionPDF({
-    doctorName: prescriptionData.doctor.name,
-    doctorEmail: prescriptionData.doctor.email,
-    patientName: prescriptionData.patient.name,
-    patientEmail: prescriptionData.patient.email,
-    followUpDate: updatedFollowUpDate,
-    instructions: updatedInstructions,
-    prescriptionId: prescriptionData.id,
-    appointmentDate: prescriptionData.appointment.schedule.startDateTime,
-    createdAt: prescriptionData.createdAt,
-  });
-  //save PDF to cloudinary
-  const filename = `Prescription_updated${Date.now()}.pdf`;
-  const uploadedFile = await uploadFileToCloudinary(pdfBuffer, filename);
-  const updatedUrl = uploadedFile.secure_url;
-  // delete old PDF from cloudinary
-  if (prescriptionData.pdfUrl) {
-    try {
-      await deleteFileFromCloudinary(prescriptionData.pdfUrl);
-    } catch (error) {
-      console.error("Error occurred while deleting old PDF file:", error);
-    }
-  }
-  const updatedPrescription = await prisma.prescription.update({
-    where: {
-      id: prescriptionId,
-    },
+  const updated = await prisma.prescription.update({
+    where: { id: prescriptionId },
     data: {
-      instructions: updatedInstructions,
-      followUpDate: updatedFollowUpDate,
-      pdfUrl: updatedUrl,
+      ...(payload.instructions !== undefined ? { instructions: payload.instructions } : {}),
+      ...(payload.followUpDate !== undefined ? { followUpDate: new Date(payload.followUpDate) } : {}),
+      ...(payload.medicines !== undefined
+        ? { medicines: payload.medicines as unknown as Prisma.InputJsonValue }
+        : {}),
+      emailSentAt: null, // the updated version must be sent again
     },
-    include: {
-      patient: true,
-      doctor: true,
-      appointment: {
-        include: {
-          schedule: true,
-        },
-      },
-    },
+    include: prescriptionInclude,
   });
-  // send email notification to patient about prescription update
-  try {
-    await sendEmail({
-      to: prescriptionData.patient.email,
-      subject: `Your prescription from Dr. ${prescriptionData.doctor.name} has been updated`,
-      templateName: "prescription",
-      templateData: {
-        doctorName: prescriptionData.doctor.name,
-        patientName: prescriptionData.patient.name,
-        specialization: "Healthcare Service",
-        followUpDate: updatedFollowUpDate.toLocaleDateString(),
-        instructions: updatedInstructions,
-        appointmentDate: new Date(
-          prescriptionData.appointment.schedule.startDateTime,
-        ).toLocaleString(),
-        issuedDate: new Date().toLocaleDateString(),
-        prescriptionId: prescriptionData.id,
-        pdfUrl: updatedUrl,
-      },
-      attachments: [
-        {
-          filename: filename,
-          content: pdfBuffer,
-          contentType: "application/pdf",
-        },
-      ],
+  queueDelivery(updated.id, "updated");
+  return updated;
+};
+
+const deletePrescription = async (user: IRequestUser, prescriptionId: string): Promise<void> => {
+  const doctorData = await getDoctorProfileOrThrow(user);
+  const existing = await prisma.prescription.findUnique({ where: { id: prescriptionId } });
+  if (!existing || existing.doctorId !== doctorData.id) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Prescription not found");
+  }
+  await prisma.prescription.delete({ where: { id: prescriptionId } });
+  if (existing.pdfUrl) {
+    await deleteFileFromCloudinary(existing.pdfUrl).catch((error) =>
+      console.error("Error deleting prescription PDF:", error?.message),
+    );
+  }
+};
+
+// ------------------------------------------------------------------ reading
+
+const myPrescriptions = async (user: IRequestUser) => {
+  if (user.role === Role.DOCTOR) {
+    const doctorData = await getDoctorProfileOrThrow(user);
+    return prisma.prescription.findMany({
+      where: { doctorId: doctorData.id },
+      include: prescriptionInclude,
+      orderBy: { createdAt: "desc" },
     });
-  } catch (error) {
-    console.log(
-      "Failed to send email notification for prescription update",
-      error,
-    );
   }
-  return updatedPrescription;
-};
-const deletePrescription = async (
-  user: IRequestUser,
-  prescriptionId: string,
-): Promise<void> => {
-  const userExists = await prisma.user.findUnique({
-    where: {
-      email: user.email,
-    },
-  });
-  if (!userExists) {
-    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
-  }
-  const prescriptionData = await prisma.prescription.findUniqueOrThrow({
-    where: {
-      id: prescriptionId,
-    },
-    include: {
-      doctor: true,
-      patient: true,
-      appointment: {
-        include: {
-          schedule: true,
-        },
-      },
-    },
-  });
-  if (prescriptionData.doctor.email !== user.email) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      "You are not authorized to delete this prescription",
-    );
-  }
-  // delete PDF from cloudinary
-  if (prescriptionData.pdfUrl) {
-    try {
-      await deleteFileFromCloudinary(prescriptionData.pdfUrl);
-    } catch (error) {
-      console.error("Error occurred while deleting PDF file:", error);
-    }
-  }
-  await prisma.prescription.delete({
-    where: {
-      id: prescriptionId,
-    },
+  const patientData = await getPatientProfileOrThrow(user);
+  return prisma.prescription.findMany({
+    where: { patientId: patientData.id },
+    include: prescriptionInclude,
+    orderBy: { createdAt: "desc" },
   });
 };
+
+const getAllPrescriptions = async () =>
+  prisma.prescription.findMany({
+    include: prescriptionInclude,
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
 
 export const PrescriptionService = {
   givePrescription,
@@ -373,4 +238,5 @@ export const PrescriptionService = {
   getAllPrescriptions,
   updatePrescription,
   deletePrescription,
+  retryPrescriptionDelivery,
 };

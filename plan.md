@@ -627,34 +627,45 @@ Also fixed in passing:
 **Goal:** the appointment itself happens inside the app.
 
 ### Video call
-- [ ] **7.1 [S]** Choose a provider: Daily.co, Agora, 100ms, Twilio or self-hosted Jitsi.
+- [x] **7.1 [S]** Choose a provider: Daily.co, Agora, 100ms, Twilio or self-hosted Jitsi.
   - `videoCallingId` is the room id.
   - The provider's join token is created **on the server**.
-- [ ] **7.2 [S]** Add `GET /appointments/:id/join` that returns a short-lived join token only when **all** of these are true:
+  - _Done: Daily.co. Private room per appointment (name = videoCallingId), created on first join; tokens are issued only on the server._
+- [x] **7.2 [S]** Add `GET /appointments/:id/join` that returns a short-lived join token only when **all** of these are true:
   - the caller is the patient or doctor of this appointment;
   - the appointment is PAID;
   - its status is SCHEDULED or INPROGRESS;
   - the time is between 10 minutes before start and the end of the slot.
-- [ ] **7.3 [C]** Build the video call page `/consultation/room/[appointmentId]`:
+  - _Done: owner-only (others get 404); PAID + SCHEDULED/INPROGRESS; open from 10 minutes before start until the slot ends; token expires 15 minutes after the end; 503 when the key is missing._
+- [x] **7.3 [C]** Build the video call page `/consultation/room/[appointmentId]`:
   - waiting room;
   - camera and mic check;
   - when the doctor joins, the appointment moves to INPROGRESS.
+  - _Done: waiting room with countdown, camera/mic check, Daily Prebuilt iframe; doctor joining sets INPROGRESS; doctor has Write prescription and Complete buttons._
 
 ### Prescription
-- [ ] **7.4 [S]** Validate prescriptions with the existing `prescription.validation.ts`. Include `instructions`, `followUpDate` and a list of medicines (name, dose, frequency, duration).
-- [ ] **7.5 [S]** Allow a prescription only for COMPLETED or INPROGRESS appointments, by that appointment's doctor, and only one per appointment.
-- [ ] **7.6 [S]** Generate the PDF and email it **after** the DB commit. A failed email is retried and never breaks the save.
-- [ ] **7.7 [C]** Build the doctor's prescription form and list (`doctor/dashboard/prescriptions`).
-- [ ] **7.8 [C]** Build the patient's prescriptions page `/dashboard/my-prescriptions` with a PDF download.
+- [x] **7.4 [S]** Validate prescriptions with the existing `prescription.validation.ts`. Include `instructions`, `followUpDate` and a list of medicines (name, dose, frequency, duration).
+  - _Done: strict zod; 1 to 30 medicines (name, dose, frequency, duration, notes)._
+- [x] **7.5 [S]** Allow a prescription only for COMPLETED or INPROGRESS appointments, by that appointment's doctor, and only one per appointment.
+  - _Done: only that appointment's doctor; status INPROGRESS or COMPLETED; duplicates get 409._
+- [x] **7.6 [S]** Generate the PDF and email it **after** the DB commit. A failed email is retried and never breaks the save.
+  - _Done: PDF and email are sent after the commit (setImmediate); emailSentAt is set; the cron retries unsent ones._
+- [x] **7.7 [C]** Build the doctor's prescription form and list (`doctor/dashboard/prescriptions`).
+  - _Done: form with a dynamic medicine list, plus a list page._
+- [x] **7.8 [C]** Build the patient's prescriptions page `/dashboard/my-prescriptions` with a PDF download.
+  - _Done: list with PDF download._
 
 ### Review
-- [ ] **7.9 [S]** Allow a review only for COMPLETED appointments, once per appointment:
+- [x] **7.9 [S]** Allow a review only for COMPLETED appointments, once per appointment:
   - the rating is an integer from 1 to 5;
   - the comment has a maximum of 1000 characters and its HTML is stripped.
-- [ ] **7.10 [S]** Update the doctor's `averageRating` and `reviewCount` in the same transaction as each review change.
-- [ ] **7.11 [C]** Build a review form on completed appointments, the doctor's "My reviews" page and reviews on the public doctor profile.
+  - _Done: COMPLETED only, one per appointment; integer rating 1 to 5; HTML stripped; comment 5 to 1000 characters._
+- [x] **7.10 [S]** Update the doctor's `averageRating` and `reviewCount` in the same transaction as each review change.
+  - _Done: averageRating and reviewCount are updated in the review transaction._
+- [x] **7.11 [C]** Build a review form on completed appointments, the doctor's "My reviews" page and reviews on the public doctor profile.
+  - _Done: review form on completed appointments, doctor My reviews page, reviews on the public profile._
 
-**Phase done when:** these work end to end:
+**Phase done when:** these work end to end (checked 2026-10-02: live API suite 34/34 and browser E2E with real Daily):
 - the patient books, pays and joins the call at the right time
 - the doctor completes the appointment and writes the prescription
 - the patient gets the PDF and leaves a review

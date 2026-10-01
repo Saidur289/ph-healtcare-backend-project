@@ -18,6 +18,8 @@ model Doctor {
   currentWorkingPlace String?
   designation         String
   averageRating       Float  @default(0.0)
+  // kept in sync with averageRating in the same transaction as every review change
+  reviewCount         Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

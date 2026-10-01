@@ -86,6 +86,15 @@ const rescheduleAppointment = catchAsync(
     });
   },
 );
+const joinVideoCall = catchAsync(async (req: Request, res: Response) => {
+  const result = await AppointmentService.joinVideoCall(req.user, req.params.id as string);
+  sendResponse(res, {
+    httpStatusCode: StatusCodes.OK,
+    success: true,
+    message: "Join details created",
+    data: result,
+  });
+});
 const bookAppointmentWithPayLater = catchAsync(
   async (req: Request, res: Response) => {
     const result = await AppointmentService.bookAppointmentWithPayLater(
@@ -120,6 +129,7 @@ export const AppointmentController = {
   getMySingleAppointment,
   changeAppointmentStatus,
   rescheduleAppointment,
+  joinVideoCall,
   bookAppointmentWithPayLater,
   initiatePayment,
 };

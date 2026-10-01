@@ -1,5 +1,7 @@
 import PDFDocument from "pdfkit";
 import { envVars } from "../../config/env";
+import { TMedicine } from "./prescription.validation";
+
 interface PrescriptionData {
   doctorName: string;
   doctorEmail: string;
@@ -7,109 +9,93 @@ interface PrescriptionData {
   patientEmail: string;
   followUpDate: Date;
   instructions: string;
+  medicines: TMedicine[];
   prescriptionId: string;
   appointmentDate: Date;
   createdAt: Date;
 }
 
-export const generatePrescriptionPDF = async (
-  prescriptionData: PrescriptionData,
-): Promise<Buffer> => {
-  return new Promise((resolve, reject) => {
+const formatDate = (date: Date) =>
+  new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(date);
+
+export const generatePrescriptionPDF = async (data: PrescriptionData): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-      });
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
       const chunks: Buffer[] = [];
-      doc.on("data", (chunk) => {
-        chunks.push(chunk);
-      });
-      doc.on("end", () => {
-        const result = Buffer.concat(chunks);
-        resolve(result);
-      });
-      doc.on("error", (err) => {
-        reject(err);
-      });
-      // Title
-      doc
-        .fontSize(24)
-        .font("Helvetica-Bold")
-        .text("PRESCRIPTION", { align: "center" });
+      doc.on("data", (chunk) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+
+      const line = () => {
+        doc.moveDown(0.5);
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+        doc.moveDown(0.5);
+      };
+      const heading = (text: string) => doc.fontSize(11).font("Helvetica-Bold").text(text);
+      const body = (text: string) => doc.fontSize(10).font("Helvetica").text(text);
+
+      // header
+      doc.fontSize(22).font("Helvetica-Bold").text("PRESCRIPTION", { align: "center" });
+      doc.fontSize(10).font("Helvetica").text("PH Healthcare Service", { align: "center" });
+      line();
+
+      heading("Doctor");
+      body(`Dr. ${data.doctorName}  ·  ${data.doctorEmail}`);
       doc.moveDown(0.5);
-      // Doctor and Patient Information
-      doc
-        .fontSize(10)
-        .font("Helvetica")
-        .text("PH Healthcare Service", { align: "center" });
-      doc.text("Your Health, Our Priority", { align: "center" });
-      doc.moveDown(1);
-      //horizontal line
-      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-      doc.fontSize(10).font("Helvetica-Bold").text("Doctor Information");
-      doc
-        .fontSize(11)
-        .font("Helvetica")
-        .text(`Name: ${prescriptionData.doctorName}`);
-      doc.text(`Email: ${prescriptionData.doctorEmail}`);
-      doc.moveDown(0.8);
-      doc.fontSize(10).font("Helvetica-Bold").text("Patient Information");
-      doc
-        .fontSize(11)
-        .font("Helvetica")
-        .text(`Name: ${prescriptionData.patientName}`);
-      doc.text(`Email: ${prescriptionData.patientEmail}`);
-      doc.moveDown(0.8);
-      doc.fontSize(10).font("Helvetica-Bold").text("Prescription Details");
-      doc
-        .fontSize(11)
-        .font("Helvetica")
-        .text(
-          `Follow-up Date: ${prescriptionData.followUpDate.toDateString()}`,
+      heading("Patient");
+      body(`${data.patientName}  ·  ${data.patientEmail}`);
+      doc.moveDown(0.5);
+      body(`Appointment: ${formatDate(data.appointmentDate)}    Issued: ${formatDate(data.createdAt)}    Follow-up: ${formatDate(data.followUpDate)}`);
+      line();
+
+      // medicines table: name | dose | frequency | duration
+      heading("Medicines");
+      doc.moveDown(0.3);
+      const columns = [
+        { title: "Medicine", x: 50, width: 170 },
+        { title: "Dose", x: 225, width: 80 },
+        { title: "Frequency", x: 310, width: 140 },
+        { title: "Duration", x: 455, width: 90 },
+      ];
+      let y = doc.y;
+      doc.fontSize(9).font("Helvetica-Bold");
+      columns.forEach((c) => doc.text(c.title, c.x, y, { width: c.width }));
+      y = doc.y + 4;
+      doc.font("Helvetica");
+      data.medicines.forEach((medicine, index) => {
+        const values = [`${index + 1}. ${medicine.name}`, medicine.dose, medicine.frequency, medicine.duration];
+        const rowHeight = Math.max(
+          ...values.map((value, i) => doc.heightOfString(value, { width: columns[i].width })),
         );
-      doc.text(`Instructions: ${prescriptionData.instructions}`);
-      doc.moveDown(0.8);
-      doc.fontSize(10).font("Helvetica-Bold").text("Additional Information");
-      doc
-        .fontSize(11)
-        .font("Helvetica")
-        .text(`Prescription ID: ${prescriptionData.prescriptionId}`);
-      doc.text(
-        `Appointment Date: ${prescriptionData.appointmentDate.toLocaleDateString()}`,
-      );
-      doc.text(
-        `Issued Date: ${new Date(prescriptionData.createdAt).toLocaleDateString()}`,
-      );
-      if (prescriptionData.followUpDate) {
-        doc.text(
-          `Follow-up Date: ${prescriptionData.followUpDate.toLocaleDateString()}`,
-        );
-      }
-      doc.moveDown(1);
-      //horizontal line
-      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-      // instruction medication
-      doc.text(prescriptionData.instructions, {
-        align: "left",
-        width: 445,
+        if (y + rowHeight > 760) {
+          doc.addPage();
+          y = 50;
+        }
+        values.forEach((value, i) => doc.text(value, columns[i].x, y, { width: columns[i].width }));
+        y += rowHeight + 2;
+        if (medicine.notes) {
+          doc.fontSize(8).fillColor("#555").text(`   ${medicine.notes}`, 50, y, { width: 495 });
+          doc.fillColor("black").fontSize(9);
+          y = doc.y + 2;
+        }
       });
-      doc.moveDown(1);
-      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-      // Footer
+      doc.x = 50;
+      doc.y = y;
+      line();
+
+      heading("Instructions");
+      body(data.instructions);
+      line();
+
       doc
-        .fontSize(9)
+        .fontSize(8)
         .font("Helvetica")
-        .text(
-          "This prescription is electronically generated and does not require a physical signature.",
-          { align: "center" },
-        );
-      doc.text(`For more information, visit: ${envVars.FRONTEND_URL}`, {
-        align: "center",
-      });
+        .text(`Prescription ID: ${data.prescriptionId}`, { align: "center" })
+        .text("Electronically generated; no physical signature required.", { align: "center" })
+        .text(envVars.FRONTEND_URL, { align: "center" });
       doc.end();
     } catch (error) {
       reject(error);
     }
   });
-};
