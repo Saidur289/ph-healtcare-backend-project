@@ -1,4 +1,6 @@
+import { StatusCodes } from "http-status-codes";
 import { deleteFileFromCloudinary } from "../../config/cloudinary.config";
+import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import {
@@ -14,6 +16,8 @@ const updateProfile = async (
   const patientData = await prisma.patient.findUniqueOrThrow({
     where: { email: user.email },
   });
+  // files are removed from Cloudinary only after the DB transaction succeeded
+  const filesToDelete: string[] = [];
   await prisma.$transaction(async (tx) => {
     if (payload.patientInfo) {
       await tx.patient.update({
@@ -66,13 +70,16 @@ const updateProfile = async (
     ) {
       for (const report of payload.patientMedicalReport) {
         if (report.shouldDelete && report.reportId) {
-          const deleteReport = await tx.medicalReport.delete({
-            where: {
-              id: report.reportId,
-            },
+          // only this patient's own reports can be deleted
+          const ownReport = await tx.medicalReport.findFirst({
+            where: { id: report.reportId, patientId: patientData.id },
           });
-          if (deleteReport.reportLink) {
-            await deleteFileFromCloudinary(deleteReport.reportLink);
+          if (!ownReport) {
+            throw new AppError(StatusCodes.NOT_FOUND, "Medical report not found");
+          }
+          await tx.medicalReport.delete({ where: { id: ownReport.id } });
+          if (ownReport.reportLink) {
+            filesToDelete.push(ownReport.reportLink);
           }
         } else if (report.reportName && report.reportLink) {
           await tx.medicalReport.create({
@@ -86,6 +93,7 @@ const updateProfile = async (
       }
     }
   });
+  await Promise.allSettled(filesToDelete.map((file) => deleteFileFromCloudinary(file)));
   const result = await prisma.patient.findUniqueOrThrow({
     where: { email: user.email },
     include: { patientHealthData: true, medicalReports: true },

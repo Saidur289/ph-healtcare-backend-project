@@ -40,7 +40,7 @@ const otpSchema = z
   .trim()
   .regex(/^\d{6}$/, "OTP must be 6 digits");
 
-const registerZodSchema = z.object({
+const registerZodSchema = z.strictObject({
   name: z
     .string("Name is required")
     .trim()
@@ -50,29 +50,29 @@ const registerZodSchema = z.object({
   password: passwordSchema,
 });
 
-const loginZodSchema = z.object({
+const loginZodSchema = z.strictObject({
   email: emailSchema,
   // no policy check on login: old accounts may have older passwords
   password: z.string("Password is required").min(1, "Password is required").max(128),
 });
 
-const verifyEmailZodSchema = z.object({
+const verifyEmailZodSchema = z.strictObject({
   email: emailSchema,
   otp: otpSchema,
 });
 
-const emailOnlyZodSchema = z.object({
+const emailOnlyZodSchema = z.strictObject({
   email: emailSchema,
 });
 
-const resetPasswordZodSchema = z.object({
+const resetPasswordZodSchema = z.strictObject({
   email: emailSchema,
   otp: otpSchema,
   newPassword: passwordSchema,
 });
 
 const changePasswordZodSchema = z
-  .object({
+  .strictObject({
     currentPassword: z.string("Current password is required").min(1).max(128),
     newPassword: passwordSchema,
   })

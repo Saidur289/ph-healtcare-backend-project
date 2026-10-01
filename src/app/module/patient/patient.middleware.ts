@@ -24,14 +24,30 @@ export const updatePatientProfileMiddleware = async (
    *
    * Then convert string JSON into object
    */
-  if (req.body.data) {
-    req.body = JSON.parse(req.body.data);
+  if (typeof req.body?.data === "string") {
+    try {
+      req.body = JSON.parse(req.body.data);
+    } catch {
+      return res.status(400).json({ success: false, message: "Invalid JSON in 'data' field" });
+    }
   }
+  req.body = req.body ?? {};
 
   /**
    * Store request body into typed payload
    */
   const payload: IUpdatePatientProfilePayload = req.body;
+
+  // File links may only come from real uploads below, never from the JSON body
+  // (otherwise any URL could be stored as a "medical report" or profile photo).
+  if (payload.patientInfo) {
+    delete payload.patientInfo.profilePhoto;
+  }
+  if (Array.isArray(payload.patientMedicalReport)) {
+    payload.patientMedicalReport = payload.patientMedicalReport.filter(
+      (report) => report.shouldDelete && report.reportId,
+    );
+  }
 
   // Log incoming payload before file processing
 

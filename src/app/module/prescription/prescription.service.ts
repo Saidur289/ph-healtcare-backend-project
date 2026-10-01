@@ -13,6 +13,7 @@ import {
   ICreatePrescriptionPayload,
   IUpdatePrescriptionPayload,
 } from "./prescription.interface";
+import { getDoctorProfileOrThrow } from "../../utils/profile";
 
 const givePrescription = async (
   user: IRequestUser,
@@ -20,11 +21,7 @@ const givePrescription = async (
 ) => {
 
   // Find logged-in doctor
-  const doctorData = await prisma.doctor.findFirstOrThrow({
-    where: {
-      email: user.email,
-    },
-  });
+  const doctorData = await getDoctorProfileOrThrow(user);
 
 
   // Find appointment with relations
@@ -55,8 +52,8 @@ const givePrescription = async (
   // Authorization check
   if (appointmentData.doctorId !== doctorData.id) {
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "You are not authorized to give prescription",
+      StatusCodes.FORBIDDEN,
+      "You can only write prescriptions for your own appointments",
     );
   }
 
@@ -235,7 +232,7 @@ const updatePrescription = async (
   });
   if (prescriptionData.doctor.email !== user.email) {
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
+      StatusCodes.FORBIDDEN,
       "You are not authorized to update this prescription",
     );
   }
@@ -351,7 +348,7 @@ const deletePrescription = async (
   });
   if (prescriptionData.doctor.email !== user.email) {
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
+      StatusCodes.FORBIDDEN,
       "You are not authorized to delete this prescription",
     );
   }

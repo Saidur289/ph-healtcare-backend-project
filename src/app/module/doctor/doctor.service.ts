@@ -16,7 +16,8 @@ import {
   getDoctorPublicDetailsSelect,
 } from "./doctor.constant";
 import { Doctor, Prisma } from "../../../generated/prisma/client";
-import { UserStatus } from "../../../generated/prisma/enums";
+import { Role, UserStatus } from "../../../generated/prisma/enums";
+import { IRequestUser } from "../../interface/requestUser.interface";
 
 // PUBLIC: fixed safe columns only. ?include= and ?fields= are ignored on purpose.
 const getAllDoctors = async (query: IQueryParams) => {
@@ -128,71 +129,80 @@ const getDoctorByIdForAdmin = async (doctorId: string) => {
     specialties: doctor.specialties.map((s) => s.specialty),
   };
 };
+// fields only an admin may change (they affect billing / verification)
+const ADMIN_ONLY_DOCTOR_FIELDS = ["appointmentFee", "registrationNumber"] as const;
+
 const updateDoctor = async (
   doctorId: string,
   payload: IUpdateDoctorPayload,
+  user: IRequestUser,
 ) => {
-  // check if doctor exists
-  const isDoctorExists = await prisma.doctor.findFirst({
+  const existingDoctor = await prisma.doctor.findFirst({
     where: {
       id: doctorId,
       isDeleted: false,
     },
-    select: {
-      specialties: {
-        select: {
-          specialtyId: true,
-        },
-      },
-    },
+    select: { id: true, userId: true },
   });
-
-  if (!isDoctorExists) {
+  if (!existingDoctor) {
     throw new AppError(StatusCodes.NOT_FOUND, "Doctor not found");
   }
 
   const { specialties, doctor: doctorData } = payload;
 
-  // update doctor basic info
-  const updatedDoctor = await prisma.doctor.update({
-    where: {
-      id: doctorId,
-    },
-    data: doctorData || {},
-    include: {
-      specialties: {
-        include: {
-          specialty: true,
-        },
-      },
-    },
-  });
+  // a doctor may edit only their own profile, and not the admin-only fields
+  if (user.role === Role.DOCTOR) {
+    if (existingDoctor.userId !== user.userId) {
+      throw new AppError(StatusCodes.FORBIDDEN, "You can only update your own profile");
+    }
+    const blocked = ADMIN_ONLY_DOCTOR_FIELDS.filter(
+      (field) => doctorData?.[field] !== undefined,
+    );
+    if (blocked.length > 0) {
+      throw new AppError(
+        StatusCodes.FORBIDDEN,
+        `Only an admin can change: ${blocked.join(", ")}`,
+      );
+    }
+  }
 
-  // update specialties
-  if (specialties && specialties.length > 0) {
-    // delete old specialties
-    await prisma.doctorSpecialty.deleteMany({
-      where: {
-        doctorId,
-      },
+  // specialties is a list of changes: { specialtyId, shouldDelete }
+  const toRemove = (specialties ?? [])
+    .filter((item) => item.shouldDelete)
+    .map((item) => item.specialtyId);
+  const toAdd = (specialties ?? [])
+    .filter((item) => !item.shouldDelete)
+    .map((item) => item.specialtyId);
+
+  if (toAdd.length > 0) {
+    const found = await prisma.specialty.count({
+      where: { id: { in: toAdd }, isDeleted: false },
     });
+    if (found !== new Set(toAdd).size) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "One or more specialties do not exist");
+    }
+  }
 
-    // prepare new specialties data
-    const doctorSpecialtyData = specialties.map((item) => ({
-      doctorId,
-      specialtyId: item.specialtyId,
-    }));
-
-    // create new specialties
-    await prisma.doctorSpecialty.createMany({
-      data: doctorSpecialtyData,
-    });
-
-    // get updated doctor with specialties
-    const result = await prisma.doctor.findUnique({
-      where: {
-        id: doctorId,
-      },
+  const result = await prisma.$transaction(async (tx) => {
+    if (doctorData && Object.keys(doctorData).length > 0) {
+      await tx.doctor.update({
+        where: { id: doctorId },
+        data: doctorData,
+      });
+    }
+    if (toRemove.length > 0) {
+      await tx.doctorSpecialty.deleteMany({
+        where: { doctorId, specialtyId: { in: toRemove } },
+      });
+    }
+    if (toAdd.length > 0) {
+      await tx.doctorSpecialty.createMany({
+        data: toAdd.map((specialtyId) => ({ doctorId, specialtyId })),
+        skipDuplicates: true,
+      });
+    }
+    return tx.doctor.findUniqueOrThrow({
+      where: { id: doctorId },
       include: {
         specialties: {
           include: {
@@ -201,16 +211,11 @@ const updateDoctor = async (
         },
       },
     });
-
-    return {
-      ...result,
-      specialties: result?.specialties.map((s) => s.specialty),
-    };
-  }
+  });
 
   return {
-    ...updatedDoctor,
-    specialties: updatedDoctor.specialties.map((s) => s.specialty),
+    ...result,
+    specialties: result.specialties.map((s) => s.specialty),
   };
 };
 const deleteDoctor = async (doctorId: string) => {

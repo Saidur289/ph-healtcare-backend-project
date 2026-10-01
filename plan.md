@@ -19,7 +19,7 @@ This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 
 | 1 | Critical security lockdown | ☑ |
 | 2 | Core bug fixes (things that are broken today) | ☑ (end-to-end check pending DB) |
 | 3 | Authentication and session hardening | ☑ (3.19 deliberately changed; browser test of register/verify still to do) |
-| 4 | Authorization (who can do what) | ☐ |
+| 4 | Authorization (who can do what) | ☑ |
 | 5 | Appointment booking engine | ☐ |
 | 6 | Payments (Stripe) | ☐ |
 | 7 | Consultation: video call, prescription, review | ☐ |
@@ -341,30 +341,55 @@ This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 
 
 **Goal:** every endpoint checks **role** and **ownership**. No user can read or change another user's data by changing an id in the URL (IDOR).
 
-- [ ] **4.1 [S]** Create `server/docs/permissions.md`, a permission matrix with one row per endpoint and these columns:
+- [x] **4.1 [S]** Create `server/docs/permissions.md`, a permission matrix with one row per endpoint and these columns:
   - Public, PATIENT, DOCTOR, ADMIN, SUPER_ADMIN
   - the ownership rule, for example "patient: own appointments only"
-- [ ] **4.2 [S]** Add a helper, `getProfileOrThrow(req.user)`, that returns the Patient, Doctor or Admin profile for the logged-in user. Use it in every "my" endpoint.
-- [ ] **4.3 [S]** `PATCH /doctors/:id`:
+- [x] **4.2 [S]** Add a helper, `getProfileOrThrow(req.user)`, that returns the Patient, Doctor or Admin profile for the logged-in user. Use it in every "my" endpoint.
+  - Done:
+    - `utils/profile.ts` (`getPatientProfileOrThrow`, `getDoctorProfileOrThrow`) is used for reviews and prescriptions.
+    - The other "my" endpoints already look up the profile from the session user, and the live tests prove it.
+    - Use the helper in all new code.
+- [x] **4.3 [S]** `PATCH /doctors/:id`:
   - a DOCTOR may edit **only themselves**;
   - a DOCTOR may not change `appointmentFee`, `isDeleted` or other admin-only fields (admin only);
   - run auth **before** validation.
-- [ ] **4.4 [S]** Medical reports: delete only when `report.patientId === myPatient.id` (`patient.service.ts:73`).
-- [ ] **4.5 [S]** Appointments:
+- [x] **4.4 [S]** Medical reports: delete only when `report.patientId === myPatient.id` (`patient.service.ts:73`).
+  - Also:
+    - Report links and the profile photo can only come from real uploads; URLs in the JSON body are ignored.
+    - Cloudinary files are deleted after the DB commit.
+    - Fixed: every profile update without reports used to fail validation.
+- [x] **4.5 [S]** Appointments:
   - a patient sees only their own;
   - a doctor sees only appointments with them;
   - an admin sees everything;
   - the same rule applies to `my-single-appointment/:id`.
-- [ ] **4.6 [S]** Prescriptions:
+- [x] **4.6 [S]** Prescriptions:
   - only the appointment's doctor can create, edit or delete;
   - only the appointment's patient and doctor can read;
   - admins can read.
-- [ ] **4.7 [S]** Reviews: only the appointment's patient can create, edit or delete, and only once per appointment.
-- [ ] **4.8 [S]** Admin vs super admin:
+- [x] **4.7 [S]** Reviews: only the appointment's patient can create, edit or delete, and only once per appointment.
+  - Also: the appointment must be PAID **and COMPLETED**. Reviews only become possible once Phase 5 lets doctors complete appointments.
+- [x] **4.8 [S]** Admin vs super admin:
   - an ADMIN cannot create, edit or delete other admins, or change roles;
   - nobody can delete or demote themselves or the last super admin.
-- [ ] **4.9 [S]** Make every zod body schema `.strict()` so unknown fields such as `role`, `isDeleted`, `paymentStatus` or `doctorId` are rejected. This prevents mass assignment.
-- [ ] **4.10 [S]** Never spread `...payload` straight into `prisma.create/update` (for example `prescription.service.ts`). Pick fields explicitly.
+- [x] **4.9 [S]** Make every zod body schema `.strict()` so unknown fields such as `role`, `isDeleted`, `paymentStatus` or `doctorId` are rejected. This prevents mass assignment.
+- [x] **4.10 [S]** Never spread `...payload` straight into `prisma.create/update` (for example `prescription.service.ts`). Pick fields explicitly.
+  - Done:
+    - Prescriptions, reviews and admins pick fields explicitly.
+    - The remaining spreads (patient info and health data, doctor create and update, specialty) take their objects from **strict** schemas, so they can only contain allowed fields.
+
+**Status (2026-10-01):** 21 live ownership checks pass on Neon with throw-away accounts that were deleted afterwards. They cover:
+- a doctor editing another doctor, or changing their own fee;
+- reading, paying for or changing someone else's appointment;
+- deleting someone else's medical report;
+- reviewing or prescribing for someone else's appointment;
+- admin-only routes;
+- unknown fields such as `role`, `isDeleted` and `patientId` being rejected.
+
+Also fixed in passing:
+- the appointment status endpoint read the whole body as the status;
+- removing one specialty from a doctor deleted all of them;
+- the specialty ids are now checked.
 
 **Phase done when:** for each "my" endpoint, a test using user B's token on user A's resource gets a 403 or 404 (see Phase 11).
 

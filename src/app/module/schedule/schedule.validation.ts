@@ -18,7 +18,7 @@ const toMinutes = (time: string) => {
 
 // the service needs all four values to build the time slots, so none of them are optional
 const scheduleShape = z
-  .object({
+  .strictObject({
     startDate: dateField("Start date"),
     endDate: dateField("End date"),
     startTime: timeField("Start time"),

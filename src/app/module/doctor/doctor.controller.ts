@@ -55,7 +55,11 @@ const updateDoctor = catchAsync(async (req: Request, res: Response) => {
   const doctorId = req.params.id;
   const payload = req.body;
 
-  const result = await DoctorService.updateDoctor(doctorId as string, payload);
+  const result = await DoctorService.updateDoctor(
+    doctorId as string,
+    payload,
+    req.user,
+  );
 
   sendResponse(res, {
     success: true,

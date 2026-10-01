@@ -2,10 +2,10 @@ import z from "zod";
 import { Gender, Role } from "../../../generated/prisma/enums";
 import { passwordSchema } from "../auth/auth.validation";
 
-const createDoctorZodSchema = z.object({
+const createDoctorZodSchema = z.strictObject({
   // temporary password; the doctor must change it after the first login
   password: passwordSchema,
-  doctor: z.object({
+  doctor: z.strictObject({
     name: z
       .string("Name is required")
       .min(5, "Name must be at least 5 characters long")
@@ -45,9 +45,9 @@ const createDoctorZodSchema = z.object({
   }),
   specialties: z.array(z.uuid(), "Specialties must be an array of UUIDs"),
 });
-const createAdminValidationSchema = z.object({
+const createAdminValidationSchema = z.strictObject({
   password: passwordSchema,
-  admin: z.object({
+  admin: z.strictObject({
     name: z
       .string("Name is required")
       .min(5, "Name must be at least 5 characters long")

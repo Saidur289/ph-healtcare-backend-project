@@ -5,6 +5,9 @@ Base path: `/api/v1` (except the webhook and better-auth).
 
 Legend: **Public** = no login · **Any** = any logged-in user · **SA** = SUPER_ADMIN
 
+All request bodies are validated with **strict** zod schemas: unknown fields (e.g. `role`, `isDeleted`, `patientId`) → 400.
+Someone else's record is answered with **404** (we don't confirm it exists) or **403** when the action itself is not allowed.
+
 ## Public endpoints (intentionally no `checkAuth`)
 
 | Method | Path | Notes |
@@ -36,35 +39,35 @@ Legend: **Public** = no login · **Any** = any logged-in user · **SA** = SUPER_
 | specialties | DELETE | `/specialties/:id` | ADMIN, SA | — |
 | doctors | GET | `/doctors/admin` | ADMIN, SA | — |
 | doctors | GET | `/doctors/admin/:id` | ADMIN, SA | — |
-| doctors | PATCH | `/doctors/:id` | ADMIN, DOCTOR, SA | DOCTOR: own profile only, no fee change (TODO 4.3) |
+| doctors | PATCH | `/doctors/:id` | ADMIN, DOCTOR, SA | DOCTOR: own profile only; `appointmentFee` and `registrationNumber` are admin-only |
 | doctors | DELETE | `/doctors/:id` | ADMIN, SA | — |
 | admins | PATCH | `/admins/change-user-status` | ADMIN, SA | ADMIN: doctors/patients only; SA: also admins; never self or SA; blocking ends sessions |
 | admins | PATCH | `/admins/change-user-role` | SA | ADMIN ↔ SUPER_ADMIN only; never self; not the last SA; ends sessions |
 | admins | GET | `/admins`, `/admins/:id` | ADMIN, SA | — |
 | admins | PATCH | `/admins/:id` | SA | — |
-| admins | DELETE | `/admins/:id` | SA | not self, not last SA (TODO 4.8) |
+| admins | DELETE | `/admins/:id` | SA | not self, never a SUPER_ADMIN |
 | schedules | POST | `/schedules` | ADMIN, SA | — |
 | schedules | GET | `/schedules`, `/schedules/:id` | ADMIN, SA, DOCTOR | — |
 | schedules | PATCH / DELETE | `/schedules/:id` | ADMIN, SA | — |
 | doctor-schedules | POST | `/doctor-schedules/create-my-doctor-schedule` | DOCTOR | self |
-| doctor-schedules | GET | `/doctor-schedules/my-doctor-schedules` | DOCTOR | self (TODO 2.9) |
+| doctor-schedules | GET | `/doctor-schedules/my-doctor-schedules` | DOCTOR | self (always filtered by the session's doctor) |
 | doctor-schedules | PATCH | `/doctor-schedules/update-doctor-schedule` | DOCTOR | self |
 | doctor-schedules | DELETE | `/doctor-schedules/delete-my-schedule/:id` | DOCTOR | self |
 | doctor-schedules | GET | `/doctor-schedules`, `/doctor-schedules/:doctorId/schedule/:scheduleId` | ADMIN, SA | — |
 | appointments | POST | `/appointments/book-appointment` | PATIENT | self |
 | appointments | POST | `/appointments/book-appointment-with-pay-later` | PATIENT | self |
 | appointments | POST | `/appointments/initiate-payment/:id` | PATIENT | own appointment |
-| appointments | GET | `/appointments/my-appointments` | PATIENT, DOCTOR | own (TODO 4.5) |
-| appointments | GET | `/appointments/my-single-appointment/:id` | PATIENT, DOCTOR | own (TODO 4.5) |
-| appointments | PATCH | `/appointments/change-appointment-status/:id` | DOCTOR, PATIENT, ADMIN, SA | state machine (TODO 5.13) |
-| patients | PATCH | `/patients/update-profile` | PATIENT | self; own reports only (TODO 4.4) |
+| appointments | GET | `/appointments/my-appointments` | PATIENT, DOCTOR | own only |
+| appointments | GET | `/appointments/my-single-appointment/:id` | PATIENT, DOCTOR | own only; someone else's id → 404 |
+| appointments | PATCH | `/appointments/change-appointment-status/:id` | DOCTOR, PATIENT, ADMIN, SA | owner only; ADMIN/SA → 403 until the state machine (5.13) |
+| patients | PATCH | `/patients/update-profile` | PATIENT | self; can delete only own reports; file links only from uploads |
 | prescriptions | GET | `/prescriptions` | ADMIN, SA | — |
-| prescriptions | POST | `/prescriptions` | DOCTOR | appointment's doctor (TODO 4.6) |
-| prescriptions | GET | `/prescriptions/my-prescriptions` | DOCTOR, PATIENT | own (TODO 2.8) |
-| prescriptions | PUT / DELETE | `/prescriptions/:id` | DOCTOR | own (TODO 4.6) |
-| reviews | POST | `/reviews` | PATIENT | own completed appointment (TODO 4.7) |
-| reviews | GET | `/reviews/my-reviews` | PATIENT, DOCTOR | own (TODO 2.8) |
+| prescriptions | POST | `/prescriptions` | DOCTOR | only the appointment's doctor |
+| prescriptions | GET | `/prescriptions/my-prescriptions` | DOCTOR, PATIENT | own only |
+| prescriptions | PUT / DELETE | `/prescriptions/:id` | DOCTOR | own only |
+| reviews | POST | `/reviews` | PATIENT | own appointment, PAID and COMPLETED, once |
+| reviews | GET | `/reviews/my-reviews` | PATIENT, DOCTOR | own only |
 | reviews | GET | `/reviews` | ADMIN, SA | — |
-| reviews | GET → PATCH | `/reviews/update-review/:id` | PATIENT | own (TODO 2.7, 4.7) |
-| reviews | DELETE | `/reviews/delete-review/:id` | PATIENT | own (TODO 4.7) |
+| reviews | PATCH | `/reviews/update-review/:id` | PATIENT | own only |
+| reviews | DELETE | `/reviews/delete-review/:id` | PATIENT | own only |
 | stats | GET | `/stats` | Any | own role's stats |

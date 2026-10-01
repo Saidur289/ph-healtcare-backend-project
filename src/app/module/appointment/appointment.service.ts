@@ -202,7 +202,7 @@ const changeAppointmentStatus = async (
       });
     } else {
       throw new AppError(
-        StatusCodes.BAD_REQUEST,
+        StatusCodes.FORBIDDEN,
         "You are not authorized to change this appointment",
       );
     }
@@ -221,11 +221,17 @@ const changeAppointmentStatus = async (
       });
     } else {
       throw new AppError(
-        StatusCodes.BAD_REQUEST,
+        StatusCodes.FORBIDDEN,
         "You are not authorized to change this appointment",
       );
     }
   }
+  // ADMIN / SUPER_ADMIN: the allowed transitions come with the state machine (plan.md 5.13).
+  // Until then, refuse explicitly instead of answering 200 without changing anything.
+  throw new AppError(
+    StatusCodes.FORBIDDEN,
+    "This status change is not allowed",
+  );
 };
 const bookAppointmentWithPayLater = async (
   payload: ICreateBookAppointmentPayload,

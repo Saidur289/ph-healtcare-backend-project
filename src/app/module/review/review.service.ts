@@ -1,28 +1,38 @@
 import { StatusCodes } from "http-status-codes";
-import { PaymentStatus, Role } from "../../../generated/prisma/enums";
+import {
+  AppointmentStatus,
+  PaymentStatus,
+  Role,
+} from "../../../generated/prisma/enums";
 import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { ICreateReviewPayload, IUpdateReviewPayload } from "./review.interface";
+import { getPatientProfileOrThrow } from "../../utils/profile";
 
 const createReview = async (
   user: IRequestUser,
   payload: ICreateReviewPayload,
 ) => {
-  const patientData = await prisma.patient.findUniqueOrThrow({
-    where: { email: user.email },
-  });
+  const patientData = await getPatientProfileOrThrow(user);
   const appointmentData = await prisma.appointment.findUniqueOrThrow({
     where: { id: payload.appointmentId },
   });
   if (appointmentData.patientId !== patientData.id) {
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "You are not authorized to give review",
+      StatusCodes.FORBIDDEN,
+      "You can only review your own appointments",
     );
   }
   if (appointmentData.paymentStatus !== PaymentStatus.PAID) {
     throw new AppError(StatusCodes.BAD_REQUEST, "Payment is not done");
+  }
+  // a review is about a consultation that actually happened
+  if (appointmentData.status !== AppointmentStatus.COMPLETED) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "You can review an appointment only after it is completed",
+    );
   }
   const isReviewed = await prisma.review.findFirst({
     where: {
@@ -141,7 +151,7 @@ const updateReview = async (
   }
   if (isReviewed.patientId !== patientData.id) {
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
+      StatusCodes.FORBIDDEN,
       "You are not authorized to update this review",
     );
   }
@@ -195,7 +205,7 @@ const deleteReview = async (user: IRequestUser, reviewId: string) => {
   }
   if (isReviewed.patientId !== patientData.id) {
     throw new AppError(
-      StatusCodes.BAD_REQUEST,
+      StatusCodes.FORBIDDEN,
       "You are not authorized to delete this review",
     );
   }

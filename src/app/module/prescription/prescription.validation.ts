@@ -8,7 +8,7 @@ const dateString = z
     message: "Follow-up date must be a valid date",
   });
 
-const createPrescriptionZodSchema = z.object({
+const createPrescriptionZodSchema = z.strictObject({
   appointmentId: z.uuid("A valid appointment id is required"),
   followUpDate: dateString,
   instructions: z
@@ -17,7 +17,7 @@ const createPrescriptionZodSchema = z.object({
     .min(1, "Instructions are required")
     .max(5000, "Instructions must be at most 5000 characters"),
 });
-const updatePrescriptionZodSchema = z.object({
+const updatePrescriptionZodSchema = z.strictObject({
   followUpDate: dateString.optional(),
   instructions: z
     .string("Instructions must be a string")

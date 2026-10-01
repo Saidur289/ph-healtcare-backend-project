@@ -1,6 +1,6 @@
 import z from "zod";
 
-const CreateReviewZodSchema = z.object({
+const CreateReviewZodSchema = z.strictObject({
   appointmentId: z.uuid("A valid appointment id is required"),
   rating: z
     .number()
@@ -12,7 +12,7 @@ const CreateReviewZodSchema = z.object({
     .min(5, "Comment must be at least 5 characters long")
     .max(1000, "Comment must be at most 1000 characters"),
 });
-const UpdateReviewZodSchema = z.object({
+const UpdateReviewZodSchema = z.strictObject({
   rating: z
     .number()
     .min(1, "Rating must be at least 1")

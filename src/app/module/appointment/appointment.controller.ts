@@ -45,16 +45,17 @@ const changeAppointmentStatus = catchAsync(
   async (req: Request, res: Response) => {
     const user = req.user;
     const appointmentId = req.params.id;
-    const payload = req.body;
+    // the body is { status }; passing the whole object compared an object with a string
+    const { status } = req.body;
     const result = await AppointmentService.changeAppointmentStatus(
       appointmentId as string,
-      payload,
+      status,
       user,
     );
     sendResponse(res, {
       httpStatusCode: StatusCodes.OK,
       success: true,
-      message: "Appointments fetched successfully",
+      message: "Appointment status updated successfully",
       data: result,
     });
   },

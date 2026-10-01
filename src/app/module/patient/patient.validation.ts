@@ -1,9 +1,9 @@
 import z from "zod";
 import { BloodGroup, Gender } from "../../../generated/prisma/enums";
 
-const updatePatientProfileZodSchema = z.object({
+const updatePatientProfileZodSchema = z.strictObject({
   patientInfo: z
-    .object({
+    .strictObject({
       name: z
         .string("Name is required")
         .min(5, "Name must be at least 5 characters long")
@@ -22,7 +22,7 @@ const updatePatientProfileZodSchema = z.object({
     })
     .optional(),
   patientHealthData: z
-    .object({
+    .strictObject({
       gender: z
         .enum([Gender.FEMALE, Gender.MALE], "Gender must be either")
         .optional(),
@@ -65,7 +65,7 @@ const updatePatientProfileZodSchema = z.object({
     .optional(),
   patientMedicalReport: z
     .array(
-      z.object({
+      z.strictObject({
         shouldDelete: z.boolean().optional(),
         reportId: z.uuid().optional(),
         reportName: z.string().optional(),
@@ -75,8 +75,9 @@ const updatePatientProfileZodSchema = z.object({
     .optional()
     .refine(
       (reports) => {
+        // no reports in this update is fine
         if (!reports || reports.length === 0) {
-          return false;
+          return true;
         }
         for (const report of reports) {
           if (!report.reportName && report.reportLink) {

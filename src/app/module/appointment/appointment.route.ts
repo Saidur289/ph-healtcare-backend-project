@@ -2,12 +2,15 @@ import { Router } from "express";
 import { checkAuth } from "../../middleware/checkAuth";
 import { AppointmentController } from "./appointment.controller";
 import { Role } from "../../../generated/prisma/enums";
+import { validateRequest } from "../../middleware/validateRequest";
+import { AppointmentValidation } from "./appointment.validation";
 
 const router = Router();
 
 router.post(
   "/book-appointment",
   checkAuth(Role.PATIENT),
+  validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointment,
 );
 router.get(
@@ -23,11 +26,13 @@ router.get(
 router.patch(
   "/change-appointment-status/:id",
   checkAuth(Role.DOCTOR, Role.PATIENT, Role.ADMIN, Role.SUPER_ADMIN),
+  validateRequest(AppointmentValidation.changeAppointmentStatusZodSchema),
   AppointmentController.changeAppointmentStatus,
 );
 router.post(
   "/book-appointment-with-pay-later",
   checkAuth(Role.PATIENT),
+  validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointmentWithPayLater,
 );
 router.post(

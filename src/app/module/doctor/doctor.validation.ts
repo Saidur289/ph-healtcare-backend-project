@@ -1,8 +1,8 @@
 import z from "zod";
 import { Gender } from "../../../generated/prisma/enums";
-export const updateDoctorZodSchema = z.object({
+export const updateDoctorZodSchema = z.strictObject({
   doctor: z
-    .object({
+    .strictObject({
       name: z
         .string("Name must be string")
         .min(5, "Name must be at least 5 characters")
@@ -55,7 +55,7 @@ export const updateDoctorZodSchema = z.object({
     .optional(),
   specialties: z
     .array(
-      z.object({
+      z.strictObject({
         specialtyId: z.uuid("Specialty ID must be a valid UUID"),
         shouldDelete: z.boolean("shouldDelete must be a boolean").optional(),
       }),

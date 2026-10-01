@@ -2,11 +2,14 @@ import { Router } from "express";
 import { checkAuth } from "../../middleware/checkAuth";
 import { Role } from "../../../generated/prisma/enums";
 import { DoctorScheduleController } from "./doctorSchedule.controller";
+import { validateRequest } from "../../middleware/validateRequest";
+import { DoctorScheduleValidation } from "./doctorSchedule.validation";
 
 const router = Router();
 router.post(
   "/create-my-doctor-schedule",
   checkAuth(Role.DOCTOR),
+  validateRequest(DoctorScheduleValidation.createDoctorScheduleZodSchema),
   DoctorScheduleController.createDoctorSchedule,
 );
 router.get(
@@ -27,6 +30,7 @@ router.get(
 router.patch(
   "/update-doctor-schedule",
   checkAuth(Role.DOCTOR),
+  validateRequest(DoctorScheduleValidation.updateDoctorScheduleZodSchema),
   DoctorScheduleController.updateDoctorSchedule,
 );
 router.delete(
