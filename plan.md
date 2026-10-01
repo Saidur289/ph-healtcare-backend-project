@@ -746,12 +746,16 @@ What the design looks like:
 ### Patient (`/dashboard`)
 - [x] **8.5 [C]** Dashboard home: upcoming appointment card, quick actions and stats.
   - _Done: stats (upcoming, prescriptions, total paid), next appointment card (Join / Pay / waiting room), quick actions._
-- [ ] **8.6 [C]** `/dashboard/my-appointments`: tabs for upcoming, past and cancelled.
+- [x] **8.6 [C]** `/dashboard/my-appointments`: tabs for upcoming, past and cancelled.
   - Actions: pay now, cancel, reschedule, join call, view prescription, leave review.
   - Move the list that is currently on `/dashboard/page.tsx` here.
-- [ ] **8.7 [C]** Book appointment flow: pick doctor → pick slot → choose pay now or pay later → confirmation page.
-- [ ] **8.8 [C]** `/dashboard/health-records`: health data form and medical report upload, list and delete.
-- [ ] **8.9 [C]** `/my-profile`: view and edit the profile and photo.
+  - _Done: Upcoming / Past / Cancelled tabs (in the URL), with join call, waiting room, pay now, reschedule (doctor's free slots), cancel with reason (refund note), prescription PDF, invoice and review. Cancel/reschedule are offered until 2 h before the start (API rule). The old list was moved off /dashboard._
+- [x] **8.7 [C]** Book appointment flow: pick doctor → pick slot → choose pay now or pay later → confirmation page.
+  - _Done (already worked; checked): doctor → slot modal → confirmation with pay now / pay later → result banner._
+- [x] **8.8 [C]** `/dashboard/health-records`: health data form and medical report upload, list and delete.
+  - _Done: health data form (required fields on the first save, server now checks them too; field length limits), report upload/list/delete with a confirm dialog. Fixed dates of birth being stored one day early (UTC+ servers)._
+- [x] **8.9 [C]** `/my-profile`: view and edit the profile and photo.
+  - _Done: new GET/PATCH /profile/me for every role (photo upload, role-specific fields, unknown/other-role fields rejected); profile form with field errors; doctors also see fee, registration no., rating and specialties._
 
 ### Doctor (`/doctor/dashboard`)
 - [x] **8.10 [C]** Dashboard home: today's appointments, earnings and rating.

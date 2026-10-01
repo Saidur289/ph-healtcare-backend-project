@@ -93,7 +93,7 @@ export const updatePatientProfileMiddleware = async (
      */
     const newReports = files.medicalReports.map((file) => ({
       reportName:
-        file.originalname || `Medical Report - ${new Date().getTime()}`,
+        (file.originalname || `Medical Report - ${new Date().getTime()}`).slice(0, 100),
       reportLink: file.path,
     }));
 

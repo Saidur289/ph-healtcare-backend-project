@@ -44,6 +44,17 @@ const updateProfile = async (
       }
     }
     if (payload.patientHealthData) {
+      // the first save must include the required columns; later saves can be partial
+      const existingHealthData = await tx.patientHealthData.findUnique({
+        where: { patientId: patientData.id },
+        select: { id: true },
+      });
+      const missing = (["gender", "dateOfBirth", "bloodGroup", "height", "weight"] as const).filter(
+        (field) => payload.patientHealthData?.[field] === undefined,
+      );
+      if (!existingHealthData && missing.length > 0) {
+        throw new AppError(StatusCodes.BAD_REQUEST, `Please fill in: ${missing.join(", ")}`);
+      }
       const healthDataToSave: IUpdatePatientHealthDataPayload = {
         ...payload.patientHealthData,
       };

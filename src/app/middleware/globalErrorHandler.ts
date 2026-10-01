@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextFunction, Request, Response } from "express";
+import multer from "multer";
 import { StatusCodes } from "http-status-codes";
 import { envVars } from "../config/env";
 import { TErrorResponse, TErrorSources } from "../interface/error.interface";
@@ -88,6 +89,17 @@ const globalErrorHandler = async (
     message = err.body?.message || err.message || "Authentication error";
     stack = err.stack;
     errorSources = [{ path: err.body?.code ?? "", message }];
+  } else if (err instanceof multer.MulterError) {
+    // upload limits from config/multer.config.ts
+    statusCode = err.code === "LIMIT_FILE_SIZE" ? StatusCodes.REQUEST_TOO_LONG : StatusCodes.BAD_REQUEST;
+    message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "Each file must be 5 MB or smaller"
+        : err.code === "LIMIT_FILE_COUNT" || err.code === "LIMIT_UNEXPECTED_FILE"
+          ? "Too many files, or an unexpected file field"
+          : "The upload could not be processed";
+    stack = err.stack;
+    errorSources = [{ path: err.field ?? "", message }];
   } else if (err instanceof AppError) {
     statusCode = err.statusCode;
     message = err.message;
