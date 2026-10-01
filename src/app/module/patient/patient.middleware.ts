@@ -34,9 +34,6 @@ export const updatePatientProfileMiddleware = async (
   const payload: IUpdatePatientProfilePayload = req.body;
 
   // Log incoming payload before file processing
-  console.log("Initial Payload:");
-  console.log(payload);
-  console.log("*******************************************");
 
   /**
    * Uploaded files from multer
@@ -57,7 +54,6 @@ export const updatePatientProfileMiddleware = async (
    * ===============================
    */
   if (files?.profilePhoto?.[0]) {
-    console.log("Profile Photo Found:");
 
     // If patientInfo not exists, create empty object
     if (!payload.patientInfo) {
@@ -67,8 +63,6 @@ export const updatePatientProfileMiddleware = async (
     // Save uploaded file path
     payload.patientInfo.profilePhoto = files.profilePhoto[0].path;
 
-    console.log("Profile Photo Path:");
-    console.log(payload.patientInfo.profilePhoto);
   }
 
   /**
@@ -77,8 +71,6 @@ export const updatePatientProfileMiddleware = async (
    * =====================================
    */
   if (files?.medicalReports && files.medicalReports.length > 0) {
-    console.log("Medical Reports Found:");
-    console.log(files.medicalReports.length);
 
     /**
      * Convert uploaded files into report objects
@@ -89,8 +81,6 @@ export const updatePatientProfileMiddleware = async (
       reportLink: file.path,
     }));
 
-    console.log("New Reports:");
-    console.log(newReports);
 
     /**
      * If reports already exist in payload,
@@ -105,7 +95,6 @@ export const updatePatientProfileMiddleware = async (
         ...newReports,
       ];
 
-      console.log("Merged Existing + New Reports");
     } else {
       /**
        * If no reports exist,
@@ -113,15 +102,12 @@ export const updatePatientProfileMiddleware = async (
        */
       payload.patientMedicalReport = newReports;
 
-      console.log("Created New Reports Array");
     }
   }
 
   /**
    * Final payload after processing
    */
-  console.log("Final Payload:");
-  console.log(payload);
 
   /**
    * Replace req.body with updated payload

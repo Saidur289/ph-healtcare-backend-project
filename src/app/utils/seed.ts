@@ -1,59 +1,72 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Role } from "../../generated/prisma/enums";
 import { envVars } from "../config/env";
 import { auth } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 
+// Creates the first SUPER_ADMIN from env vars. Safe to run on every start.
+// Throws on failure so the server does not start in a broken state.
 export const seedSuperAdmin = async () => {
-  try {
-    const superAdminExits = await prisma.user.findFirst({
-      where: {
-        role: Role.SUPER_ADMIN,
-      },
-    });
-    if (superAdminExits) {
-      console.log("super admin already exits");
-      return null;
-    }
-    //SIGNUP
+  const superAdminExists = await prisma.user.findFirst({
+    where: {
+      role: Role.SUPER_ADMIN,
+    },
+    select: { id: true },
+  });
+  if (superAdminExists) {
+    return null;
+  }
+
+  // a previous seed may have created the auth user but failed afterwards: reuse it
+  let userId = (
+    await prisma.user.findUnique({
+      where: { email: envVars.SUPER_ADMIN_EMAIL },
+      select: { id: true },
+    })
+  )?.id;
+  let createdNow = false;
+  if (!userId) {
     const data = await auth.api.signUpEmail({
       body: {
         name: envVars.SUPER_ADMIN_NAME,
         email: envVars.SUPER_ADMIN_EMAIL,
         password: envVars.SUPER_ADMIN_PASSWORD,
         rememberMe: false,
-        needPasswordChange: false,
       },
     });
+    userId = data.user.id;
+    createdNow = true;
+  }
+
+  try {
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
-        where: {
-          id: data.user.id,
-        },
+        where: { id: userId },
         data: {
           role: Role.SUPER_ADMIN,
           emailVerified: true,
+          needPasswordChange: false,
         },
       });
-      await tx.admin.create({
-        data: {
+      await tx.admin.upsert({
+        where: { email: envVars.SUPER_ADMIN_EMAIL },
+        update: { userId },
+        create: {
           email: envVars.SUPER_ADMIN_EMAIL,
           name: envVars.SUPER_ADMIN_NAME,
-          userId: data.user.id,
+          userId,
         },
       });
     });
-    const result = await prisma.admin.findFirst({
-      where: {
-        id: envVars.SUPER_ADMIN_EMAIL,
-      },
-      include: {
-        user: true,
-      },
-    });
-    console.log(`super admin created ${result}`);
-  } catch (error: any) {
-    console.log("error in seed admin", error.message);
-    await prisma.user.delete({ where: { email: envVars.SUPER_ADMIN_EMAIL } });
+    console.log("Super admin created");
+  } catch (error) {
+    // only remove a user this run created; never delete an existing account
+    if (createdNow) {
+      await prisma.user
+        .delete({ where: { id: userId } })
+        .catch((cleanupError) =>
+          console.error("Failed to clean up super admin user:", cleanupError),
+        );
+    }
+    throw error;
   }
 };

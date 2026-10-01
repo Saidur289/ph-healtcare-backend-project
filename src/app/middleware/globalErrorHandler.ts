@@ -7,8 +7,17 @@ import z from "zod";
 import { handleZodError } from "../errorHelpers/HandleZodError";
 
 import AppError from "../errorHelpers/AppError";
+import { APIError } from "better-auth/api";
 
 import { deleteUploadedFilesFromGlobalErrorHandler } from "../utils/deletedUploadedFilesFromGlobalErrorHandler";
+import { Prisma } from "../../generated/prisma/client";
+import {
+  handlePrismaClientInitializationError,
+  handlePrismaClientKnownRequestError,
+  handlePrismaClientRustPanicError,
+  handlePrismaClientUnknownRequestError,
+  handlePrismaClientValidationError,
+} from "../errorHelpers/handlePrismaError";
 
 const globalErrorHandler = async (
   err: any,
@@ -43,6 +52,42 @@ const globalErrorHandler = async (
     errorSources = [...simplifiedError.errorSources!];
     statusCode = simplifiedError.statusCode! as number;
     stack = err.stack;
+  } else if (err instanceof Prisma.PrismaClientInitializationError) {
+    const obj = handlePrismaClientInitializationError(err);
+    message = obj.message;
+    errorSources = [...obj.errorSources!];
+    statusCode = obj.statusCode! as number;
+    stack = obj.stack;
+  } else if (err instanceof Prisma.PrismaClientUnknownRequestError) {
+    const obj = handlePrismaClientUnknownRequestError(err);
+    message = obj.message;
+    errorSources = [...obj.errorSources!];
+    statusCode = obj.statusCode! as number;
+    stack = err.stack;
+  } else if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    const obj = handlePrismaClientKnownRequestError(err);
+    message = obj.message;
+    errorSources = [...obj.errorSources!];
+    statusCode = obj.statusCode! as number;
+    stack = obj.stack;
+  } else if (err instanceof Prisma.PrismaClientRustPanicError) {
+    const obj = handlePrismaClientRustPanicError();
+    message = obj.message;
+    errorSources = [...obj.errorSources!];
+    statusCode = obj.statusCode! as number;
+    stack = obj.stack;
+  } else if (err instanceof Prisma.PrismaClientValidationError) {
+    const obj = handlePrismaClientValidationError(err);
+    message = obj.message;
+    errorSources = [...obj.errorSources!];
+    statusCode = obj.statusCode! as number;
+    stack = obj.stack;
+  } else if (err instanceof APIError) {
+    // better-auth errors (wrong OTP, wrong current password, ...) carry their own 4xx status
+    statusCode = err.statusCode || StatusCodes.BAD_REQUEST;
+    message = err.body?.message || err.message || "Authentication error";
+    stack = err.stack;
+    errorSources = [{ path: err.body?.code ?? "", message }];
   } else if (err instanceof AppError) {
     statusCode = err.statusCode;
     message = err.message;
@@ -55,14 +100,20 @@ const globalErrorHandler = async (
     ];
   } else if (err instanceof Error) {
     statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
-    message = err.message;
+    // unexpected errors can contain internal details; only show them in development
+    message =
+      envVars.NODE_ENV === "development" ? err.message : "Something went wrong";
     stack = err.stack;
     errorSources = [
       {
         path: "",
-        message: err.message,
+        message,
       },
     ];
+  }
+  // log unexpected (5xx) errors on the server even in production; the client only gets a safe message
+  if (statusCode >= 500 && envVars.NODE_ENV !== "development") {
+    console.error("Unhandled error:", err);
   }
   const errorResponse: TErrorResponse = {
     success: false,

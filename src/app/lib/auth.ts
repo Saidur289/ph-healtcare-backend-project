@@ -5,7 +5,15 @@ import { Role, UserStatus } from "../../generated/prisma/enums";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { sendEmail } from "../utils/email";
 import { envVars } from "../config/env";
-// If your Prisma file is located elsewhere, you can change the path
+import { SESSION_TTL_SECONDS, SESSION_UPDATE_AGE_SECONDS } from "../utils/token";
+
+const isProduction = envVars.NODE_ENV === "production";
+// same flags as our own auth cookies (utils/token.ts)
+const cookieAttributes = {
+  sameSite: "lax" as const,
+  secure: isProduction,
+  httpOnly: true,
+};
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -14,6 +22,9 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
+    // same limits as passwordSchema in module/auth/auth.validation.ts
+    minPasswordLength: 8,
+    maxPasswordLength: 128,
   },
   socialProviders: {
     google: {
@@ -36,46 +47,63 @@ export const auth = betterAuth({
   emailVerification: {
     sendOnSignIn: true,
     sendOnSignUp: true,
-    autoSignInAfterVerification: true,
+    // the user logs in after verifying (our login issues the JWTs); no orphan sessions
+    autoSignInAfterVerification: false,
   },
 
   user: {
+    // input: false -> these fields can never be set from a sign-up request body
+    // (always the default). Privileged values such as role are set by our own
+    // services with prisma after sign-up (see user.service.ts and seed.ts).
     additionalFields: {
       role: {
         type: "string",
         required: true,
         defaultValue: Role.PATIENT,
+        input: false,
       },
       status: {
         type: "string",
         required: true,
         defaultValue: UserStatus.ACTIVE,
+        input: false,
       },
       needPasswordChange: {
         type: "boolean",
         required: true,
         defaultValue: false,
+        input: false,
       },
       isDeleted: {
         type: "boolean",
         required: true,
         defaultValue: false,
+        input: false,
       },
       deletedAt: {
         type: "date",
         required: false,
         defaultValue: null,
+        input: false,
       },
     },
   },
 
   session: {
-    expiresIn: 60 * 60 * 60 * 24,
-    updateAge: 60 * 60 * 60 * 24, // 1 day in seconds
+    // from .env: BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN / _UPDATE_AGE (e.g. "1d")
+    expiresIn: SESSION_TTL_SECONDS,
+    updateAge: SESSION_UPDATE_AGE_SECONDS,
     cookieCache: {
       enabled: true,
-      maxAge: 60 * 60 * 60 * 24, // 1 day
+      // short, so a revoked session stops working within minutes
+      maxAge: 5 * 60,
     },
+  },
+  // better-auth's own limiter for its HTTP endpoints (only Google login is exposed, see app.ts)
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 30,
   },
   plugins: [
     bearer(),
@@ -88,29 +116,23 @@ export const auth = betterAuth({
               email,
             },
           });
-          const isItFirstSuperAdmin = (await prisma.admin.count()) === 1;
-          if (!user) {
-            console.log("user with this email not found", email);
+          // the seeded super admin is verified by the seed, so it never needs an OTP
+          if (!user || user.role === Role.SUPER_ADMIN || user.emailVerified) {
             return;
           }
-          if (
-            (user && user.role === Role.SUPER_ADMIN) ||
-            !isItFirstSuperAdmin
-          ) {
-            console.log(`skipping send email `);
-            return;
-          }
-          if (user && !user.emailVerified) {
-            sendEmail({
-              to: email,
-              subject: "verify your email",
-              templateName: "otp",
-              templateData: {
-                name: user.name,
-                otp,
-              },
-            });
-          }
+          // catch: an SMTP failure must never become an unhandled rejection (that would stop the server).
+          // The user can request a new code.
+          sendEmail({
+            to: email,
+            subject: "verify your email",
+            templateName: "otp",
+            templateData: {
+              name: user.name,
+              otp,
+            },
+          }).catch((error) =>
+            console.error("Failed to send verification OTP:", error?.message),
+          );
         } else if (type === "forget-password") {
           const user = await prisma.user.findUnique({
             where: {
@@ -126,13 +148,16 @@ export const auth = betterAuth({
                 name: user.name,
                 otp,
               },
-            });
-            console.log("sent otp to your email", email, otp);
+            }).catch((error) =>
+              console.error("Failed to send password reset OTP:", error?.message),
+            );
           }
         }
       },
-      expiresIn: 2 * 60,
+      expiresIn: 10 * 60, // 10 minutes
       otpLength: 6,
+      allowedAttempts: 5, // then a new code must be requested
+      storeOTP: "hashed", // the DB never holds a usable code
     }),
   ],
   redirectURLs: {
@@ -143,21 +168,15 @@ export const auth = betterAuth({
     envVars.FRONTEND_URL,
   ],
   advanced: {
+    // keep false: true would rename the cookie to "__Secure-better-auth.session_token",
+    // and the API + client read "better-auth.session_token". "secure" is set below instead.
     useSecureCookies: false,
     cookies: {
       state: {
-        attributes: {
-          sameSite: "none",
-          secure: true,
-          httpOnly: true,
-        },
+        attributes: cookieAttributes,
       },
       sessionToken: {
-        attributes: {
-          sameSite: "none",
-          secure: true,
-          httpOnly: true,
-        },
+        attributes: cookieAttributes,
       },
     },
   },

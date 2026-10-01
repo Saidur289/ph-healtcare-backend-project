@@ -33,7 +33,7 @@ const updateAdmin = catchAsync(async (req: Request, res: Response) => {
         data: result
     })
 })
-const deleteDoctor = catchAsync(async (req: Request, res: Response) => {
+const deleteAdmin = catchAsync(async (req: Request, res: Response) => {
     const adminId = req.params.id
     const user = req.user
     if (!user) return
@@ -45,9 +45,29 @@ const deleteDoctor = catchAsync(async (req: Request, res: Response) => {
         data: result
     })
 })
+const changeUserStatus = catchAsync(async (req: Request, res: Response) => {
+    const result = await AdminService.changeUserStatus(req.user, req.body)
+    sendResponse(res, {
+        success: true,
+        httpStatusCode: 200,
+        message: "User status changed successfully",
+        data: result
+    })
+})
+const changeUserRole = catchAsync(async (req: Request, res: Response) => {
+    const result = await AdminService.changeUserRole(req.user, req.body)
+    sendResponse(res, {
+        success: true,
+        httpStatusCode: 200,
+        message: "User role changed successfully",
+        data: result
+    })
+})
 export const AdminController = {
     getAllAdmin,
     getAdminById,
     updateAdmin,
-    deleteDoctor
+    deleteAdmin,
+    changeUserStatus,
+    changeUserRole
 }

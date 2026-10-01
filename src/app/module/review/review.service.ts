@@ -40,7 +40,9 @@ const createReview = async (
       data: {
         patientId: patientData.id,
         doctorId: appointmentData.doctorId,
-        ...payload,
+        appointmentId: appointmentData.id,
+        rating: payload.rating,
+        comment: payload.comment,
       },
     });
     const averageRating = await tx.review.aggregate({
@@ -56,7 +58,8 @@ const createReview = async (
         id: reviewData.doctorId,
       },
       data: {
-        averageRating: averageRating._avg.rating as number,
+        // no reviews left -> average is null, store 0
+        averageRating: averageRating._avg.rating ?? 0,
       },
     });
     return reviewData;
@@ -81,10 +84,15 @@ const getMyReview = async (user: IRequestUser) => {
   if (!isUserExists) {
     throw new AppError(StatusCodes.NOT_FOUND, "User not found");
   }
+  // reviews store the Patient / Doctor profile id, not the User id
   if (isUserExists.role === Role.PATIENT) {
+    const patientData = await prisma.patient.findUniqueOrThrow({
+      where: { userId: isUserExists.id },
+      select: { id: true },
+    });
     const result = await prisma.review.findMany({
       where: {
-        patientId: isUserExists.id,
+        patientId: patientData.id,
       },
       include: {
         patient: true,
@@ -94,9 +102,13 @@ const getMyReview = async (user: IRequestUser) => {
     return result;
   }
   if (isUserExists.role === Role.DOCTOR) {
+    const doctorData = await prisma.doctor.findUniqueOrThrow({
+      where: { userId: isUserExists.id },
+      select: { id: true },
+    });
     const result = await prisma.review.findMany({
       where: {
-        doctorId: isUserExists.id,
+        doctorId: doctorData.id,
       },
       include: {
         patient: true,
@@ -139,7 +151,8 @@ const updateReview = async (
         id: reviewId,
       },
       data: {
-        ...payload,
+        rating: payload.rating,
+        comment: payload.comment,
       },
     });
     const averageRating = await tx.review.aggregate({
@@ -155,7 +168,8 @@ const updateReview = async (
         id: reviewData.doctorId,
       },
       data: {
-        averageRating: averageRating._avg.rating as number,
+        // no reviews left -> average is null, store 0
+        averageRating: averageRating._avg.rating ?? 0,
       },
     });
     return reviewData;
@@ -204,7 +218,8 @@ const deleteReview = async (user: IRequestUser, reviewId: string) => {
         id: deleteData.doctorId,
       },
       data: {
-        averageRating: averageRating._avg.rating as number,
+        // no reviews left -> average is null, store 0
+        averageRating: averageRating._avg.rating ?? 0,
       },
     });
     return deleteData;

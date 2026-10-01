@@ -41,7 +41,6 @@ const createSchedule = async (payload: ICreateSchedulePayload) => {
         Number(startTime.split(":")[1]), // minute part
       ),
     );
-    console.log("startTime", startDateTime);
     // create endDateTime for current date
     const endDateTime = new Date(
       addMinutes(
@@ -54,15 +53,11 @@ const createSchedule = async (payload: ICreateSchedulePayload) => {
     );
     //generate 30 min slots
     while (startDateTime < endDateTime) {
-      console.log("-----------------------------------");
-      console.log("Current Slot Start:", startDateTime);
       // convert startDateTime to utc or db formate
       const utcStartDateTime = await convertDateTime(startDateTime);
-      console.log(utcStartDateTime, "start date");
       const utcEndDateTime = await convertDateTime(
         addMinutes(startDateTime, interval),
       );
-      console.log(utcEndDateTime, "end date");
       const scheduleData = {
         startDateTime: utcStartDateTime,
         endDateTime: utcEndDateTime,
@@ -81,11 +76,8 @@ const createSchedule = async (payload: ICreateSchedulePayload) => {
         schedules.push(schedule);
       }
       startDateTime.setMinutes(startDateTime.getMinutes() + interval);
-      console.log("Next Slot Start:", startDateTime);
-      console.log("Next Slot Start:", endDateTime);
     }
     currentDate.setDate(currentDate.getDate() + 1);
-    console.log("===================================");
   }
   return schedules;
 };
@@ -121,7 +113,6 @@ const getScheduleById = async (id: string) => {
 };
 const updateSchedule = async (id: string, payload: IUpdateSchedulePayload) => {
   const { startDate, endDate, startTime, endTime } = payload;
-  console.log("payload receive......................", { payload });
   const startDateTime = new Date(
     addMinutes(
       addHours(

@@ -15,7 +15,7 @@ import { StatsRoutes } from "../module/stats/stats.route";
 const router = Router();
 router.use("/specialties", SpecialtyRoutes);
 router.use("/auth", AuthRoutes);
-router.use("/user", UserRoutes);
+router.use("/users", UserRoutes);
 router.use("/doctors", DoctorRoutes);
 router.use("/admins", AdminRoutes);
 router.use("/schedules", ScheduleRoutes);

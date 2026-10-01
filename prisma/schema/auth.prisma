@@ -31,6 +31,8 @@ model Session {
   updatedAt DateTime @updatedAt
   ipAddress String?
   userAgent String?
+  // sha256 of the current refresh token for this session (rotation + reuse detection)
+  refreshTokenHash String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([token])

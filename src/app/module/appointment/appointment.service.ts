@@ -16,15 +16,15 @@ const bookAppointment = async (
   user: IRequestUser,
   payload: ICreateBookAppointmentPayload,
 ) => {
-  console.log("payload Received: ", payload);
+  // console.log("payload Received: ", payload);
   const patientData = await prisma.patient.findUniqueOrThrow({
     where: { email: user.email },
   });
-  console.log("patientData: ", { patientData });
+  // console.log("patientData: ", { patientData });
   const doctorData = await prisma.doctor.findUniqueOrThrow({
     where: { id: payload.doctorId, isDeleted: false },
   });
-  console.log("doctorData: ", doctorData);
+  // console.log("doctorData: ", doctorData);
   const scheduleData = await prisma.schedule.findUniqueOrThrow({
     where: { id: payload.scheduleId },
   });

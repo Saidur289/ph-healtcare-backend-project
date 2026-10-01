@@ -38,7 +38,7 @@ export const generateInvoicePDF = async (
       doc.moveDown(0.5);
       doc
         .fontSize(10)
-        .font("Helvetica ")
+        .font("Helvetica")
         .text("PH Healthcare Service", { align: "center" });
       doc.text("Your Health, Our Priority", { align: "center" });
       doc.moveDown(1);

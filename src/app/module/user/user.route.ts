@@ -14,6 +14,7 @@ router.post(
 );
 router.post(
   "/create-admin",
+  checkAuth(Role.SUPER_ADMIN),
   validateRequest(UserValidation.createAdminValidationSchema),
   UserController.createAdmin,
 );

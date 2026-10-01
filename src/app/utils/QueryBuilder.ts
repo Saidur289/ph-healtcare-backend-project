@@ -33,7 +33,6 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
             const searchConditions: Record<string, unknown>[] = searchableFields.map((field) => {
                 if (field.includes(".")) {
                     const parts = field.split(".");
-                    console.log(parts, "parts");
 
                     if (parts.length === 2) {
                         const [relation, nestedField] = parts;
@@ -101,7 +100,6 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
         Object.keys(this.queryParams).forEach((key) => {
             if (!excludedField.includes(key)) {
                 filterParams[key] = this.queryParams[key];
-                console.log(filterParams[key]);
             }
         })
         //{nmae: "abc", age: 20}
@@ -221,8 +219,10 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
         return this;
     }
     paginate(): this {
-        const page = Number(this.queryParams.page) || 1;
-        const limit = Number(this.queryParams.limit) || 10;
+        // never trust page/limit from the client: whole numbers only, page >= 1, 1 <= limit <= maxLimit
+        const maxLimit = this.config.maxLimit ?? 100;
+        const page = Math.max(1, Math.floor(Number(this.queryParams.page)) || 1);
+        const limit = Math.min(maxLimit, Math.max(1, Math.floor(Number(this.queryParams.limit)) || 10));
         this.page = page;
         this.limit = limit;
         this.skip = (page - 1) * limit
@@ -234,7 +234,9 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
 
         // Get sort field from query params
         // Default = createdAt
-        const sortBy = this.queryParams.sortBy || "createdAt";
+        const { sortableFields } = this.config;
+        const requestedSortBy = this.queryParams.sortBy || "createdAt";
+        const sortBy = sortableFields && !sortableFields.includes(requestedSortBy) ? "createdAt" : requestedSortBy;
 
         // Get sorting direction
         // If sortOrder = asc → ascending
@@ -370,6 +372,14 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
         }
 
         // Return current instance for method chaining
+        return this;
+    }
+    // Fixed server-side select (an allowlist of columns). Use it instead of fields()/include()
+    // on public endpoints so the client can never ask for extra columns or relations.
+    select(selection: Record<string, unknown>): this {
+        this.selectFields = {};
+        this.query.select = selection;
+        delete this.query.include;
         return this;
     }
     include(relation: TInclude): this {

@@ -26,7 +26,7 @@ export interface ICreateAdmin {
     contactNumber?: string;
     profilePhoto?: string;
   };
-  role: "ADMIN" | "SUPER_ADMIN";
+  role?: "ADMIN";
 }
 export interface ICreateSuperAdmin {
   password: string;

@@ -43,7 +43,8 @@ export const sendEmail = async ({ subject, templateData, templateName, to, attac
                 contentType: attachment.contentType,
             }))
         })
-        console.log(`Email sent to ${to}: ${info.messageId}`);
+        // log the message id only, never the recipient address (personal data)
+        console.log(`Email sent: ${info.messageId}`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
         console.log("Email sending error", error.message);

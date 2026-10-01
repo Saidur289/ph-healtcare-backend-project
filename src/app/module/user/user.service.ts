@@ -33,13 +33,15 @@ const createDoctor = async (payload: ICreateDoctorPayload) => {
             name: payload.doctor.name,
             email: payload.doctor.email,
             password: payload.password,
-            role: Role.DOCTOR,
-            needPasswordChange: true,
-
         }
     })
     try {
         const doctor = await prisma.$transaction(async (tx) => {
+            // role can't be sent through sign-up (input: false in lib/auth.ts), so set it here
+            await tx.user.update({
+                where: { id: userData.user.id },
+                data: { role: Role.DOCTOR, needPasswordChange: true }
+            })
             const doctorData = await tx.doctor.create({
                 data: {
                     userId: userData.user.id,
@@ -129,24 +131,30 @@ const createAdmin = async (payload: ICreateAdmin) => {
     if (userExists) {
         throw new AppError(StatusCodes.BAD_REQUEST, "User with this email already exists");
     }
-    const { admin, role, password } = payload
+    const { admin, password } = payload
     // create user in auth system
     const userData = await auth.api.signUpEmail({
         body: {
-            ...admin,
-            role,
+            name: admin.name,
+            email: admin.email,
             password,
-            needPasswordChange: true,
             rememberMe: false
         }
     })
     try {
-        // create admin in database
-        const adminData = await prisma.admin.create({
-            data: {
-                userId: userData.user.id,
-                ...admin
-            }
+        const adminData = await prisma.$transaction(async (tx) => {
+            // only ADMIN can be created through the API; SUPER_ADMIN comes from the seed only
+            await tx.user.update({
+                where: { id: userData.user.id },
+                data: { role: Role.ADMIN, needPasswordChange: true }
+            })
+            // create admin in database
+            return tx.admin.create({
+                data: {
+                    userId: userData.user.id,
+                    ...admin
+                }
+            })
         })
         return adminData
 

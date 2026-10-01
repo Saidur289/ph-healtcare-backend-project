@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import { IndexRoutes } from "./app/routes";
 import path from "path";
 import { notFound } from "./app/middleware/notFound";
@@ -23,7 +23,6 @@ app.post(
   PaymentController.handleStripeEventWebhook,
 );
 app.set("views", path.resolve(process.cwd(), `src/app/templates`));
-app.use(express.json());
 app.use(
   cors({
     origin: [
@@ -37,14 +36,33 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
   }),
 );
+// better-auth must be mounted BEFORE express.json() (it reads the raw body itself).
+// Over HTTP we only expose what the Google login flow needs. Everything else
+// (email sign-up/sign-in, password change, ...) must go through /api/v1/auth, which
+// adds our validation, lockout and JWTs. Server-side auth.api.* calls are not affected.
+const PUBLIC_BETTER_AUTH_PATHS = ["/sign-in/social", "/error", "/ok"];
+const allowPublicBetterAuthPaths = (req: Request, res: Response, next: NextFunction) => {
+  const isAllowed =
+    PUBLIC_BETTER_AUTH_PATHS.includes(req.path) || req.path.startsWith("/callback/");
+  if (!isAllowed) {
+    return res.status(404).json({ success: false, message: "Not found" });
+  }
+  next();
+};
+app.use("/api/auth", allowPublicBetterAuthPaths, toNodeHandler(auth));
+
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 cron.schedule(" */25 * * * *", async () => {
-  console.log("cron job is running delete unpaid appointments");
-  await AppointmentService.cancelUnpaidAppointment();
+  // catch: a failed run must not become an unhandled rejection; the next run retries
+  try {
+    await AppointmentService.cancelUnpaidAppointment();
+  } catch (error) {
+    console.error("Cron (cancel unpaid appointments) failed:", error);
+  }
 });
 app.use("/api/v1", IndexRoutes);
-app.use("/api/auth", toNodeHandler(auth));
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Hello, TypeScript Express!");

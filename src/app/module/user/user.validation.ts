@@ -1,17 +1,16 @@
 import z from "zod";
 import { Gender, Role } from "../../../generated/prisma/enums";
+import { passwordSchema } from "../auth/auth.validation";
 
 const createDoctorZodSchema = z.object({
-  password: z
-    .string()
-    .min(6, "Password must be at least 6 characters long")
-    .max(20, "Password must be at most 20 characters long"),
+  // temporary password; the doctor must change it after the first login
+  password: passwordSchema,
   doctor: z.object({
     name: z
       .string("Name is required")
       .min(5, "Name must be at least 5 characters long")
       .max(30, "Name must be less than 30 characters"),
-    email: z.string("Email is required"),
+    email: z.email("A valid email is required"),
     address: z
       .string("Address is required")
       .min(10, "Address must be at least 10 characters long")
@@ -47,10 +46,7 @@ const createDoctorZodSchema = z.object({
   specialties: z.array(z.uuid(), "Specialties must be an array of UUIDs"),
 });
 const createAdminValidationSchema = z.object({
-  password: z
-    .string()
-    .min(6, "Password must be at least 6 characters long")
-    .max(20, "Password must be at most 20 characters long"),
+  password: passwordSchema,
   admin: z.object({
     name: z
       .string("Name is required")
@@ -64,10 +60,8 @@ const createAdminValidationSchema = z.object({
       .optional(),
     profilePhoto: z.url("Profile photo is required").optional(),
   }),
-  role: z.enum(
-    [Role.ADMIN, Role.SUPER_ADMIN],
-    "ADMIN AND SUPER IS ONLY REQUIRED",
-  ),
+  // SUPER_ADMIN can never be created through the API (only by the seed)
+  role: z.literal(Role.ADMIN, "Only ADMIN role can be created").optional(),
 });
 
 export const UserValidation = {

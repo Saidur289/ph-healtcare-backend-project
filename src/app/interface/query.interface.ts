@@ -40,6 +40,10 @@ export interface IQueryParams {
 export interface IQueryConfig {
     searchableFields?: string[];
     filterableFields?: string[];
+    // when set, sortBy must be one of these (otherwise falls back to createdAt)
+    sortableFields?: string[];
+    // upper bound for ?limit= (default 100)
+    maxLimit?: number;
 }
 export interface PrismaStringFilter {
     contains?: string;

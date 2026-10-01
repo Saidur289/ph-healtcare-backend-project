@@ -2,6 +2,8 @@ import { Router } from "express";
 import { PrescriptionController } from "./prescription.controller";
 import { checkAuth } from "../../middleware/checkAuth";
 import { Role } from "../../../generated/prisma/enums";
+import { validateRequest } from "../../middleware/validateRequest";
+import { PrescriptionValidation } from "./prescription.validation";
 
 const router = Router();
 router.get(
@@ -12,6 +14,7 @@ router.get(
 router.post(
   "/",
   checkAuth(Role.DOCTOR),
+  validateRequest(PrescriptionValidation.createPrescriptionZodSchema),
   PrescriptionController.givePrescription,
 );
 router.get(
@@ -22,6 +25,7 @@ router.get(
 router.put(
   "/:id",
   checkAuth(Role.DOCTOR),
+  validateRequest(PrescriptionValidation.updatePrescriptionZodSchema),
   PrescriptionController.updatePrescription,
 );
 router.delete(

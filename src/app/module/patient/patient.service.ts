@@ -64,10 +64,6 @@ const updateProfile = async (
       Array.isArray(payload.patientMedicalReport) &&
       payload.patientMedicalReport.length > 0
     ) {
-      console.log(
-        payload.patientMedicalReport,
-        "*************************************",
-      );
       for (const report of payload.patientMedicalReport) {
         if (report.shouldDelete && report.reportId) {
           const deleteReport = await tx.medicalReport.delete({

@@ -1,0 +1,836 @@
+# PH Healthcare: Doctor Appointment System Production Plan
+
+This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 16) to a production-ready doctor appointment platform that is secure and well tested.
+
+## How to use this file
+
+- Work through the phases **in order**. Each phase builds on the one before it.
+- When a task is finished, change `- [ ]` to `- [x]`.
+- **[S]** marks a server task, **[C]** a client task and **[S+C]** a task for both.
+- A phase is complete only when every box is ticked **and** its "Phase done when" check passes.
+- Commit after each task (or small group of tasks) with a clear message, for example `fix(auth): require admin role on create-admin`.
+- File paths are relative to `mission-6/`. Line numbers are from the review on 2026-10-01 and may move as you edit.
+
+## Progress tracker
+
+| # | Phase | Status |
+|---|-------|--------|
+| 0 | Preparation and safety net | ☐ |
+| 1 | Critical security lockdown | ☑ |
+| 2 | Core bug fixes (things that are broken today) | ☑ (end-to-end check pending DB) |
+| 3 | Authentication and session hardening | ☑ (3.19 deliberately changed; browser test of register/verify still to do) |
+| 4 | Authorization (who can do what) | ☐ |
+| 5 | Appointment booking engine | ☐ |
+| 6 | Payments (Stripe) | ☐ |
+| 7 | Consultation: video call, prescription, review | ☐ |
+| 8 | Frontend: finish every feature | ☐ |
+| 9 | Platform security hardening | ☐ |
+| 10 | Medical data protection and privacy | ☐ |
+| 11 | Testing | ☐ |
+| 12 | Performance and data quality | ☐ |
+| 13 | DevOps, deployment and monitoring | ☐ |
+| 14 | Launch checklist | ☐ |
+
+---
+
+## Phase 0: Preparation and safety net
+
+**Goal:** you can change code without fear of losing work or breaking production data.
+
+- [ ] **0.1 [S+C]** Commit or stash the current uncommitted work in both repos. Remove the debug `console.log` in `client/src/components/modules/Admin/ScheduleManagement/SchedulesTable.tsx:64` first.
+- [ ] **0.2 [S+C]** Create a new branch in each repo, for example `hardening/phase-1`. Keep `master` deployable.
+- [ ] **0.3 [S]** Commit the Prettier-only reformatting separately from logic changes so diffs stay readable.
+- [ ] **0.4 [S]** Fix `server/tsconfig.json`: the `ignoreDeprecations: "6.0"` value is invalid on TypeScript 5.9. Remove it or set it to `"5.0"`.
+  - Done when `npx tsc --noEmit` passes.
+- [ ] **0.5 [C]** Delete the stale `client/.next` folder and confirm `npx tsc --noEmit` shows only real errors.
+- [ ] **0.6 [S]** Add a `start` script (`node dist/server.js`) and make the compiled output runnable. With ESM and `moduleResolution: bundler`, either:
+  - switch to `module/moduleResolution: NodeNext` and add `.js` extensions to imports, or
+  - bundle with `tsup`/`esbuild`.
+- [x] **0.7 [S]** Set up a separate **development database** so you never test against a shared or production one. Docker is optional: a locally installed PostgreSQL or a free cloud dev database (for example Neon or Supabase) works too.
+  - Done (2026-10-01): Neon (`ep-lucky-fire…/neondb`). All 6 migrations are applied, and `prisma migrate diff` shows the DB matches the schema exactly.
+- [ ] **0.8 [S+C]** Create `.env.example` files in both repos with every key name and a placeholder value. Never put real values in them.
+- [ ] **0.9 [S+C]** Rotate any secret that was ever pasted into chat, screenshots or shared docs, or committed in an old branch. Check with `git log -p --all -S "sk_"`.
+  - Covers the Stripe keys, SMTP password, Google secret, Cloudinary keys, JWT secrets, better-auth secret and super-admin password.
+- [ ] **0.10 [S]** Remove the commented-out `docker run ... POSTGRES_PASSWORD` lines from `server/.env`.
+
+**Phase done when:** both repos type-check, the server builds and starts with `npm run build && npm start`, and a local DB is running.
+
+---
+
+## Phase 1: Critical security lockdown
+
+**Goal:** close the holes that let strangers take over the system or read patient data. Do this phase **before anything else is deployed**.
+
+- [x] **1.1 [S]** Protect `POST /users/create-admin` with `checkAuth(Role.SUPER_ADMIN)` (`server/src/app/module/user/user.route.ts:15`).
+- [x] **1.2 [S]** Remove `SUPER_ADMIN` from the allowed roles in `createAdminValidationSchema` (`server/src/app/module/user/user.validation.ts:67`). Only the seed script creates a super admin.
+  - Done: `role` is now optional and can only be `ADMIN`. The service always sets `ADMIN`.
+- [x] **1.3 [S]** In better-auth `additionalFields` (`server/src/app/lib/auth.ts:43-70`), set `input: false` on `role`, `status`, `isDeleted`, `needPasswordChange` and `deletedAt`. Public sign-up must always create a `PATIENT`.
+  - `emailVerified` is a built-in field. better-auth never reads it from sign-up input.
+  - `createDoctor`, `createAdmin` and the seed now set the role with prisma **after** sign-up.
+  - [x] Verified: `/api/auth/sign-up/email` is now blocked over HTTP (404, see 3.x). Our `/auth/register` schema has no `role` field, and better-auth always applies the default for `input: false` fields.
+- [x] **1.4 [S]** Protect `DELETE /specialties/:id` with `checkAuth(Role.ADMIN, Role.SUPER_ADMIN)` (`server/src/app/module/specialty/specialty.route.ts:12`).
+- [x] **1.5 [S]** Remove `appointments`, `prescriptions` and patient data from the **public** doctor include config (`server/src/app/module/doctor/doctor.constant.ts:5-25`). Public doctor endpoints may return only:
+  - name, photo, specialties, qualification, experience, fee, rating and available slots
+  - never patient data
+  - Done: `GET /doctors` and `GET /doctors/:id` use the fixed `doctorPublicSelect`, and `?include=` / `?fields=` are ignored.
+  - New admin-only endpoints `GET /doctors/admin` and `GET /doctors/admin/:id` serve the full data. The client admin pages now call them.
+- [x] **1.6 [S]** Use an explicit **allowlist** of fields for every public `select`. Never return the whole `user` object (it contains `email`, `status` and `needPasswordChange`).
+  - Public doctor data no longer includes the doctor's private email, phone or address.
+  - Admin user data uses `doctorUserAdminSelect`.
+  - Public filtering and sorting are limited to safe fields.
+- [x] **1.7 [S]** Cap `limit` in `QueryBuilder` (`server/src/app/utils/QueryBuilder.ts:225`), for example a maximum of 100 and a default of 10. Reject `page < 1`.
+  - Done: the maximum is 100, configurable per query with `maxLimit`, and the page is at least 1.
+- [x] **1.8 [S]** Audit **every route file** and write down the required role for each endpoint in a table (see 4.1). Any route without `checkAuth` must be intentionally public.
+  - Done: see `server/docs/permissions.md`. The redundant second `checkAuth` on `PATCH /admins/:id` was removed.
+- [x] **1.9 [S]** Stop logging secrets and personal data:
+  - Remove `console.log` of OTPs (`auth.ts:130`), request bodies (`validateRequest.ts:12`), sessions and payloads.
+  - Done for auth, validateRequest, checkAuth, patient, prescription, schedule, QueryBuilder and email. The remaining logs are tracked in 8.29 / 9.11.
+- [x] **1.10 [C]** Fix the open redirect: `isValidateRedirect` (`client/src/lib/authUtils.ts:61`) must reject anything that doesn't start with a single `/`. That covers `//evil.com`, `https://…` and `/\evil.com`.
+  - Done: only same-site relative paths are allowed, and they must be public, common or the user's own role area. Tested against 18 attack and normal cases.
+
+**Phase done when:**
+- An anonymous request cannot create users, delete specialties or see any patient data.
+  - Verified: these return 401 without login: `POST /users/create-admin`, `DELETE /specialties/:id`, `GET /doctors/admin` and `GET /doctors/admin/:id`.
+- Sign-up can only create patients. Code done; the runtime test is pending until the database is reachable (see 1.3).
+
+---
+
+## Phase 2: Core bug fixes (things that are broken today)
+
+**Goal:** every existing feature actually works.
+
+### Server
+- [x] **2.1 [S]** Change `.font("Helvetica ")` to `.font("Helvetica")` in `prescription.utils.ts:44` and `payment.utils.ts:41`. Prescriptions and invoices currently always fail.
+- [x] **2.2 [S]** Fix `validateRequest` (`server/src/app/middleware/validateRequest.ts`):
+  - use `return next(parseResult.error)`;
+  - wrap `JSON.parse(req.body.data)` in a try/catch that returns a 400;
+  - handle `req.body === undefined`.
+- [x] **2.3 [S]** Fix the Prisma error mapper (`server/src/app/errorHelpers/handlePrismaError.ts`):
+  - P2002 means unique violation and should return 409, and P2025 means not found and should return 404.
+  - Compare codes in **uppercase**.
+  - Never send `meta` or the raw DB error to the client outside development.
+- [x] **2.4 [S]** Await or catch every `sendEmail(...)` call (`auth.ts:104`, `auth.ts:121`) and the Cloudinary cleanup `Promise.all` (`deletedUploadedFilesFromGlobalErrorHandler.ts:24`). An email failure must never crash the server.
+- [x] **2.5 [S]** Change `server.ts` so that `unhandledRejection` is **logged** and the process stops gracefully: close the HTTP server, run `prisma.$disconnect()`, then exit. It must not kill the process instantly.
+  - Done:
+    - SIGTERM/SIGINT and an uncaught exception now stop the cron jobs, close the server and disconnect Prisma before exiting, with a 10 s safety timeout.
+    - An `unhandledRejection` is logged and the server **keeps running**, so one forgotten `await` can't take the site down for everyone.
+    - A failed startup (seed or DB) exits with code 1.
+    - The cron job catches its own errors.
+- [x] **2.6 [S]** Add `appointmentId` to `CreateReviewZodSchema` (`server/src/app/module/review/review.validation.ts:3`).
+- [x] **2.7 [S]** Change `GET /reviews/update-review/:id` to `PATCH` and validate the body.
+- [x] **2.8 [S]** Fix the "my" queries that compare a `User.id` with a `Doctor.id` or `Patient.id`. Look up the profile first, then filter by its id:
+  - `prescription.service.ts:197,213`
+  - `review.service.ts:87,99`
+- [x] **2.9 [S]** Fix `getMyDoctorSchedules` (`doctorSchedule.service.ts:50-53,73`) so it always filters by the logged-in doctor's id. Use the correct filterable-fields constant.
+- [x] **2.10 [S]** Fix the prescription email:
+  - `prescriptionId: result.id` is used before `result` exists (`prescription.service.ts:153`);
+  - `s.title` should be `s.specialty.title` (`:147`).
+- [x] **2.11 [S]** Fix `deleteAdmin` and `updateAdmin` (`admin.service.ts:59,82,96,106`):
+  - use the correct ids;
+  - read the flat payload;
+  - run the transaction with `tx`.
+- [x] **2.12 [S]** Fix the email OTP rule in `auth.ts:91-98`. OTPs must be sent no matter how many admins exist.
+- [x] **2.13 [S]** Fix the stats service:
+  - the doctor status distribution uses the array index as the status (`stats.service.ts:141`);
+  - a missing profile must throw, not return global counts;
+  - rename `barCharData` to `barChartData`.
+- [x] **2.14 [S]** Make schedule create and update schemas require their fields (`schedule.validation.ts`). Remove DateTime fields from `searchableFields`. Return `meta` from `GET /schedules`.
+- [x] **2.15 [S]** Fix the seed script (`server/src/app/utils/seed.ts:48,57`):
+  - query by `email`;
+  - don't delete the user blindly in `catch`;
+  - make startup fail loudly if seeding fails.
+- [x] **2.16 [S]** Make `deleteDoctor` throw `AppError(404)` instead of a plain `Error`, and also block the linked `User`.
+
+### Client
+- [x] **2.17 [C]** Fix `httpClient.ts:14`: change `if (!isTokenExpiringSoon(...))` to `if (!(await isTokenExpiringSoon(...)))`. Today the client refreshes on every request.
+- [x] **2.18 [C]** Fix the token refresh in `client/src/services/auth.service.ts:23-28`: read the tokens from `data.data`, and return `false` when no token comes back.
+- [x] **2.19 [C]** Align the doctor-schedule URLs with the server:
+  - `PATCH /doctor-schedules/update-doctor-schedule`
+  - `DELETE /doctor-schedules/delete-my-schedule/:id`
+  - Also fixed: the update payload sends `scheduleId` (the server reads `scheduleId`, not `id`).
+- [x] **2.20 [C]** Rename `needsPasswordChange` to `needPasswordChange` everywhere in the client so it matches the server and Prisma.
+- [x] **2.21 [C]** Fix `doctorDetails.schedules` to `doctorSchedules` in `ViewDoctorProfileDialog.tsx:266,291`. (Done in Phase 1.)
+- [x] **2.22 [C]** Fix the nav links that 404 in `client/src/lib/navItem.ts`:
+  - `patients-management`
+  - `book-appointment`
+  - `admins-management`
+  - `health-records`
+  - `my-prescriptions`
+  - Done:
+    - The folder was renamed to `patients-management`.
+    - "Book Appointment" now opens `/consultation`, because booking starts by choosing a doctor and a slot.
+    - "Admins" is shown to SUPER_ADMIN only.
+    - `admins-management`, `health-records` and `my-prescriptions` show a temporary "Coming soon" card until they are built in 7.8, 8.8 and 8.15.
+- [x] **2.23 [C]** Fix the other nav problems: remove the duplicate Prescriptions item, and fix the icon names `home` → `Home` and `CalenderClock` → `CalendarClock`.
+- [x] **2.24 [C]** Add `type="button"` to the password show/hide buttons in `LoginForm.tsx:94` and `RegisterForm.tsx:111`.
+- [x] **2.25 [C]** Show the server's error message in actions: use `error.response?.data?.message` instead of `error.message`. Fix the `"digest" &&` check to `"digest" in error`.
+- [x] **2.26 [C]** Fix the `h-screen,` typo in `(dashboardLayout)/layout.tsx:7`. Remove the placeholder text in `(commonProtectedLayout)/layout.tsx:10`.
+
+**Phase done when:** each of these works end to end in the browser:
+- create a doctor
+- create schedules
+- the doctor picks slots, then updates and deletes them
+- a patient books and pays
+- the doctor writes a prescription and the PDF arrives by email
+- the patient leaves a review
+
+**Status (2026-10-01):**
+- All code tasks are done, and both projects pass type-check and lint.
+- 21 database-free checks pass:
+  - `validateRequest` (no double `next()`, bad JSON gives 400, a missing body gives 400);
+  - the Prisma codes P2002→409, P2025→404 and P1xxx→503, with no database details shown in production;
+  - the new review, schedule and prescription schemas.
+- The prescription and invoice PDFs now generate (the font bug is fixed).
+- [ ] Still to do: the browser click-through above, once the database is reachable.
+
+**Extra fixes made while in these files:**
+- A deleted review now resets the doctor's average rating to 0 instead of crashing on `null`.
+- The refresh-token endpoint now sets the **new** refresh token cookie (part of 3.3).
+- Unexpected server errors show "Something went wrong" in production; the details go to the server log.
+- Uploaded files are now cleaned up for every upload type (part of 9.7).
+- Prescription routes now use their zod validation (part of 7.4).
+- Saving a prescription no longer runs inside a long transaction (part of 7.6).
+
+---
+
+## Phase 3: Authentication and session hardening
+
+**Goal:** login, tokens and sessions follow industry practice.
+
+### Design decision (choose one and write it down)
+- [x] **3.1 [S+C]** Decide on **one** source of truth for sessions. Recommended: **keep better-auth sessions** as the source of truth, and keep the custom access JWT short-lived (10–15 min) and only for stateless checks.
+  - Write the token flow in `server/README.md`: what cookies exist, their lifetime and who sets them.
+  - Done (2026-10-01): **better-auth sessions are the source of truth.** The flow is written in `server/docs/auth.md`.
+
+### Server
+- [x] **3.2 [S]** Make `checkAuth` **fail closed** (`server/src/app/middleware/checkAuth.ts`):
+  - a missing, invalid or expired session returns 401;
+  - an invalid JWT returns 401 (fix the `if (!verifyToken)` check, which never fires because `verifyToken` returns an object);
+  - a `BLOCKED` or `DELETED` user, or `isDeleted`, returns 403;
+  - `emailVerified === false` returns 403 (except on routes needed to verify);
+  - the session's userId must equal the JWT's userId.
+  - Done:
+    - The access token also carries the session id (`sid`), which must match.
+    - Role and status are read from the DB, not from the token.
+    - `checkAuthAllowUnverified()` is used only for `/auth/me`.
+- [x] **3.3 [S]** Rewrite the refresh flow (`server/src/app/module/auth/auth.service.ts:144-198`):
+  - reject expired sessions and don't extend them blindly;
+  - bind the refresh token to the session and user;
+  - re-read role and status from the DB, never from the old token;
+  - **rotate** the refresh token on every use and detect reuse (an old token used again revokes all of that user's sessions);
+  - make the controller set the **new** refresh token (`auth.controller.ts:70`).
+  - Done:
+    - New nullable column `session.refreshTokenHash`, with migration `20261001120000_session_refresh_token_hash`.
+    - There is a 30 s grace window so two tabs refreshing at once don't log the user out.
+    - Active sessions slide forward, capped at 30 days.
+    - [x] Migration applied on Neon (2026-10-01).
+- [x] **3.4 [S]** Set sane lifetimes:
+  - the session is currently `60*60*60*24` seconds (about 216 days) and should be 1–7 days (`auth.ts:73`);
+  - the access token should be 15 minutes;
+  - the refresh token should be 7 days;
+  - read all of them from env, with no hardcoded `maxAge`.
+  - Done:
+    - Your local `server/.env` now has `ACCESS_TOKEN_EXPIRES_IN=15m`.
+    - better-auth's cookie cache is down to 5 min, so a revoked session stops working quickly.
+- [x] **3.5 [S]** Revoke all of a user's sessions when the password changes, the password is reset, the user is blocked, the role changes or the account is deleted.
+- [x] **3.6 [S]** Stop returning `accessToken`/`refreshToken` in JSON bodies (`auth.controller.ts:26,43`). Cookies only.
+- [x] **3.7 [S]** Set cookie flags: `httpOnly: true`, `secure: true` in production, `sameSite: "lax"` (or `"strict"`), `path: "/"`. Make better-auth's `useSecureCookies` match (`auth.ts:146`).
+  - `useSecureCookies` stays `false` on purpose: `true` renames the cookie to `__Secure-…`. `secure` is set through the cookie attributes instead, the same on the API and the client.
+- [x] **3.8 [S]** Set a password policy: at least 8 characters, at least one letter and one number, a maximum of 128, and reject the top common passwords. Use the same rule in the server and client zod schemas.
+- [x] **3.9 [S]** Make OTPs safe:
+  - 6 digits, expiring after 10 minutes;
+  - a maximum of 5 wrong attempts, then a new code is required;
+  - at least 60 seconds between resends;
+  - each code can be used once;
+  - store only a hash.
+  - Done:
+    - better-auth `emailOTP` uses `expiresIn: 600`, `allowedAttempts: 5` and `storeOTP: "hashed"`.
+    - The 60 s cooldown covers resend, forgot-password and register.
+    - New endpoint: `POST /auth/resend-verification-otp`.
+- [x] **3.10 [S]** Prevent account enumeration: `/forget-password` and `/register` return the same message whether or not the email exists.
+  - Done: resend-OTP also does this, and reset-password answers "Invalid or expired code" instead of "Email not found".
+- [x] **3.11 [S]** Lock the account after repeated failures: after 5–10 failed logins, lock it temporarily (for example 15 minutes) and email the user.
+  - Done: 5 failures in 15 min lock the account for 15 min. The counter is in memory per server; move it to Redis in 9.2.
+  - [ ] Email the user when their account gets locked (needs an email template).
+- [x] **3.12 [S]** Make the Google login safe:
+  - handle users without an `accounts[0]` and users with both password and Google (`auth.service.ts:221,314`);
+  - URL-encode the `error` query param;
+  - fix the malformed `/auth/google?login?error=` URL.
+  - Done:
+    - Errors redirect to `/login?error=…`.
+    - The login page shows only fixed messages, never raw query text.
+    - Blocked or deleted users can't log in with Google.
+    - The redirect path is validated.
+  - [ ] Production: the Google callback sets cookies on the API's domain. That only works when the API and frontend share a parent domain; otherwise route the callback through the Next.js app (see `server/docs/auth.md`).
+- [x] **3.13 [S]** Wire up `changeUserStatus` and `changeUserRole` routes (SUPER_ADMIN only for role changes). They must revoke sessions (3.5).
+  - Done:
+    - `PATCH /admins/change-user-status`: ADMIN can manage doctors and patients; SUPER_ADMIN can also manage admins.
+    - `PATCH /admins/change-user-role`: SUPER_ADMIN only, ADMIN ↔ SUPER_ADMIN, and the last super admin can't be demoted.
+
+### Client
+- [x] **3.14 [C]** Fix the proxy (`client/src/proxy.ts`):
+  - always run the **role check**, even when the token is near expiry (lines 63-94);
+  - an expired or invalid token tries a refresh once, and if that fails it clears the cookies and redirects to `/login?redirect=…`;
+  - catch blocks must **deny** (redirect to login), never let the request through (lines 194-196).
+  - Done:
+    - The proxy refreshes with `fetch` and writes the new cookies on its own response, because `cookies().set` doesn't work in the proxy.
+    - The fresh cookies are also forwarded to the server components rendering that request.
+    - `httpClient` no longer refreshes at all.
+    - Tested with 21 cases.
+- [x] **3.15 [C]** Fix the redirect loops:
+  - remove `/verify-email` and `/reset-password` from the "logged-in users get redirected away" list (`authUtils.ts:6-7`);
+  - unverified users may see only `/verify-email`;
+  - users who must change their password may see only `/change-password`.
+  - Done:
+    - Unverified users never get a session (login sends them to `/verify-email`), so there is no loop.
+    - `needPasswordChange` is in the access token, so the proxy enforces it without an API call.
+- [x] **3.16 [C]** Fix the `/forget-password` vs `/forgot-password` route name mismatch in `authUtils.ts`.
+- [x] **3.17 [C]** Build **Logout**: call `POST /auth/logout`, delete all auth cookies, clear the TanStack Query cache and redirect to `/login`. `UserDropdown.tsx:52` is empty today.
+- [x] **3.18 [C]** Remove `"use server"` from `client/src/lib/tokenUtils.ts` and add `import "server-only"`. A client must not be able to set cookies through a server action.
+- [ ] **3.19 [C]** Add `import "server-only"` to every `services/*.ts`. Client components must call `_action.ts` files, which validate with zod and check the session, not raw services.
+  - **Changed on purpose (not done as written):**
+    - Client components still call the data services directly.
+    - The API checks the session, role and ownership on every request, so this is safe as long as the API keeps doing that (Phase 4).
+    - The dangerous ones are no longer server actions: `tokenUtils.ts` and `auth.service.ts` (cookie setting, refresh).
+    - The `server-only` package isn't installed.
+  - [ ] Optional later: move every service call behind `_action.ts` wrappers.
+- [x] **3.20 [C]** Re-check the role in each dashboard `layout.tsx` (admin, doctor, patient) on the server as defense in depth. If it doesn't match, call `redirect()`.
+- [x] **3.21 [C]** Handle `getUserInfo()` returning `null` in `DashboardSidebar.tsx:11` and `DashboardNavbar.tsx:10`, which crash today.
+- [x] **3.22 [C]** Call `/auth/me` once per request: wrap it in React `cache()` and share it between the proxy, layout, sidebar and navbar. Make the server's `/auth/me` return only profile fields, not all appointments and prescriptions.
+- [x] **3.23 [C]** Finish the auth pages:
+  - verify email with OTP input, resend button and cooldown timer;
+  - forgot password;
+  - reset password with OTP and new password;
+  - change password.
+  - Done: all four pages are built. They use a reusable `AppPasswordField`. `/change-password?required=1` explains the forced first-login change.
+- [x] **3.24 [C]** Fix the register flow:
+  - use `IRegisterResponse`;
+  - handle `token: null`;
+  - `name` must be at least 1 character;
+  - correct the "Welcome back" text;
+  - rename the page component;
+  - after register, go to `/verify-email?email=…` (URL-encode it).
+  - Done: registering no longer logs the user in. They verify the email first, then log in.
+
+**Status (2026-10-01):**
+- Server: 31 database-free checks pass, including better-auth sign-up/sign-in being blocked over HTTP, endpoints failing closed with 401, the password policy, logout clearing all cookies, and no tokens in JSON responses.
+- Client: 21 proxy checks pass with real signed tokens and a mocked refresh endpoint.
+- Both projects pass type-check and lint.
+- 16 live API checks pass on Neon (2026-10-01):
+  - super admin seeded and verified;
+  - a wrong password returns 401;
+  - login sets 3 cookies, with no tokens in the JSON;
+  - `/me` returns the slim profile;
+  - the admin endpoint is reachable;
+  - refresh rotates the refresh token;
+  - a reused old refresh token gives 401 and deletes all of that user's sessions;
+  - logout deletes the session;
+  - garbage cookies give 401.
+- [ ] Still to do in the browser: register → email code → verify → login, the forced password change for an admin-created doctor, and logout from the dropdown.
+
+**Phase done when:**
+- A blocked user is kicked out within 15 minutes or less.
+- An old refresh token cannot be reused.
+- A patient can never see `/admin/*`.
+- Logout works.
+- Every auth page works.
+
+---
+
+## Phase 4: Authorization (who can do what)
+
+**Goal:** every endpoint checks **role** and **ownership**. No user can read or change another user's data by changing an id in the URL (IDOR).
+
+- [ ] **4.1 [S]** Create `server/docs/permissions.md`, a permission matrix with one row per endpoint and these columns:
+  - Public, PATIENT, DOCTOR, ADMIN, SUPER_ADMIN
+  - the ownership rule, for example "patient: own appointments only"
+- [ ] **4.2 [S]** Add a helper, `getProfileOrThrow(req.user)`, that returns the Patient, Doctor or Admin profile for the logged-in user. Use it in every "my" endpoint.
+- [ ] **4.3 [S]** `PATCH /doctors/:id`:
+  - a DOCTOR may edit **only themselves**;
+  - a DOCTOR may not change `appointmentFee`, `isDeleted` or other admin-only fields (admin only);
+  - run auth **before** validation.
+- [ ] **4.4 [S]** Medical reports: delete only when `report.patientId === myPatient.id` (`patient.service.ts:73`).
+- [ ] **4.5 [S]** Appointments:
+  - a patient sees only their own;
+  - a doctor sees only appointments with them;
+  - an admin sees everything;
+  - the same rule applies to `my-single-appointment/:id`.
+- [ ] **4.6 [S]** Prescriptions:
+  - only the appointment's doctor can create, edit or delete;
+  - only the appointment's patient and doctor can read;
+  - admins can read.
+- [ ] **4.7 [S]** Reviews: only the appointment's patient can create, edit or delete, and only once per appointment.
+- [ ] **4.8 [S]** Admin vs super admin:
+  - an ADMIN cannot create, edit or delete other admins, or change roles;
+  - nobody can delete or demote themselves or the last super admin.
+- [ ] **4.9 [S]** Make every zod body schema `.strict()` so unknown fields such as `role`, `isDeleted`, `paymentStatus` or `doctorId` are rejected. This prevents mass assignment.
+- [ ] **4.10 [S]** Never spread `...payload` straight into `prisma.create/update` (for example `prescription.service.ts`). Pick fields explicitly.
+
+**Phase done when:** for each "my" endpoint, a test using user B's token on user A's resource gets a 403 or 404 (see Phase 11).
+
+---
+
+## Phase 5: Appointment booking engine
+
+**Goal:** booking is **atomic**, a slot can never be double-booked, and the appointment lifecycle is clear and enforced.
+
+### 5A. Data model changes (one migration)
+- [ ] **5.1 [S]** Add these fields to `Appointment`:
+  - `paymentDeadline DateTime`, after which an unpaid appointment is auto-cancelled;
+  - `cancelledAt DateTime?`, `cancelledBy Role?` and `cancelReason String?`;
+  - `startedAt DateTime?` and `completedAt DateTime?`.
+- [ ] **5.2 [S]** Add a **partial unique index** in the migration SQL, so only one active appointment can exist per doctor slot:
+  ```sql
+  CREATE UNIQUE INDEX appointment_active_slot
+    ON appointments ("doctorId", "scheduleId")
+    WHERE status <> 'CANCELED';
+  ```
+- [ ] **5.3 [S]** Optionally add `NO_SHOW` to `AppointmentStatus` and `REFUNDED` to `PaymentStatus`.
+- [ ] **5.4 [S]** Change `onDelete: Cascade` to `Restrict` on Appointment → Schedule/Doctor/Patient and on Payment and Prescription. Medical and financial records must **never** be hard-deleted by a cascade.
+- [ ] **5.5 [S]** Add a unique constraint or overlap check so a schedule cannot be created twice for the same `startDateTime`/`endDateTime`.
+
+### 5B. Schedules and slots
+- [ ] **5.6 [S]** Store every time in **UTC**. The client shows it in the user's local timezone (use `date-fns-tz` or `Intl`). Write this rule in the README.
+- [ ] **5.7 [S]** Validate schedule creation:
+  - `start < end`;
+  - the duration is a fixed slot length, for example 30 minutes;
+  - no times in the past;
+  - no overlaps.
+- [ ] **5.8 [S]** Validate doctor schedule selection:
+  - the doctor can pick only future slots;
+  - the doctor cannot remove a slot that already has an active appointment.
+- [ ] **5.9 [S]** Add a public endpoint `GET /doctors/:id/available-slots?from=&to=` that returns only future, unbooked slots.
+
+### 5C. Booking (pay now and pay later)
+- [ ] **5.10 [S]** Rewrite `bookAppointment` **and** `bookAppointmentWithPayLater` (`server/src/app/module/appointment/appointment.service.ts`) as one shared function, inside a single transaction. Steps:
+  1. Check the doctor is active and not deleted, the slot is in the future, and the patient is active and verified.
+  2. Claim the slot **atomically**:
+     ```ts
+     const { count } = await tx.doctorSchedules.updateMany({
+       where: { doctorId, scheduleId, isBooked: false },
+       data: { isBooked: true },
+     });
+     if (count !== 1) throw new AppError(409, "Slot already booked");
+     ```
+  3. Create the Appointment with `paymentDeadline`:
+     - pay now: `now + 30 min`;
+     - pay later: for example `slot start − 2 h`.
+  4. Create the Payment row (UNPAID) with the amount in **integer cents**.
+  5. **After** the transaction commits, create the Stripe session (see Phase 6). Never call Stripe inside a DB transaction.
+- [ ] **5.11 [S]** Add booking rules:
+  - a patient cannot book two overlapping appointments;
+  - set a maximum number of active unpaid appointments per patient (for example 3);
+  - a doctor cannot book themselves.
+- [ ] **5.12 [S]** Use an idempotency key: the client sends an `Idempotency-Key` header on booking, so double-clicking or a network retry doesn't create two appointments.
+
+### 5D. Lifecycle (state machine)
+- [ ] **5.13 [S]** Create `appointment.stateMachine.ts` with the allowed transitions:
+
+  | From | To | Who | Rule |
+  |------|----|-----|------|
+  | SCHEDULED | INPROGRESS | DOCTOR (own) | only from 10 min before start, and only if PAID |
+  | INPROGRESS | COMPLETED | DOCTOR (own) | — |
+  | SCHEDULED | CANCELED | PATIENT (own) | until X hours before start; refund if paid |
+  | SCHEDULED | CANCELED | DOCTOR (own) / ADMIN | any time; always refund if paid |
+  | SCHEDULED | CANCELED | SYSTEM (cron) | unpaid and `paymentDeadline < now` |
+  | SCHEDULED | NO_SHOW | DOCTOR / SYSTEM | optional |
+
+- [ ] **5.14 [S]** Replace the current status logic (`appointment.service.ts:179-229`) with the state machine:
+  - validate `status` with a zod enum;
+  - return 403 or 409 for transitions that aren't allowed (instead of a 200 that does nothing);
+  - when an appointment is cancelled, set `isBooked = false` on the slot inside the same transaction.
+- [ ] **5.15 [S]** Add rescheduling: a patient moves to another free slot of the same doctor, as one transaction that releases the old slot and claims the new one. Payment carries over.
+
+### 5E. Background jobs
+- [ ] **5.16 [S]** Rewrite the unpaid-appointment cron (`appointment.service.ts:349-397`):
+  - select only `status = SCHEDULED AND paymentStatus = UNPAID AND paymentDeadline < now()`;
+  - use `tx` everywhere inside the transaction (not `prisma`);
+  - set the appointment to CANCELED and `cancelledBy = SYSTEM`, and release the slot **only if it still belongs to this appointment**;
+  - **do not delete** the Payment row; mark it cancelled or expired;
+  - expire the Stripe Checkout session (`stripe.checkout.sessions.expire`).
+- [ ] **5.17 [S]** Make the cron safe when more than one server is running: use a Postgres advisory lock (`pg_try_advisory_lock`), or move jobs to a separate worker process.
+- [ ] **5.18 [S]** Send reminder emails 24 h and 1 h before an appointment to the patient and the doctor, and record that each was sent so it is never sent twice.
+
+**Phase done when:** a test that sends 20 parallel booking requests for the same slot ends with **exactly 1** appointment and 19 responses of 409.
+
+---
+
+## Phase 6: Payments (Stripe)
+
+**Goal:** money is never lost, never taken twice and always matches an appointment.
+
+- [ ] **6.1 [S]** Store money as an **integer in the smallest unit** (cents or poisha):
+  - change `Payment.amount` and `Doctor.appointmentFee` from `Float` to `Int`;
+  - `unit_amount` must be an integer.
+- [ ] **6.2 [S]** Create Checkout sessions **outside** DB transactions, with:
+  - `expires_at = paymentDeadline` (minimum 30 min);
+  - `metadata: { appointmentId, paymentId }`;
+  - `client_reference_id`;
+  - an idempotency key.
+- [ ] **6.3 [S]** Handle these webhook events (`server/src/app/module/payment/payment.service.ts`):
+  - `checkout.session.completed`: mark PAID only if the appointment is still SCHEDULED. If it was already cancelled, **refund automatically**.
+  - `checkout.session.expired`: release the slot and mark the payment expired.
+  - `charge.refunded`: set the payment to REFUNDED.
+- [ ] **6.4 [S]** Make the webhook return 2xx for events it has already processed or doesn't handle, and **never** 500 for a "not found" case, because Stripe retries 500s for days. Log and alert instead.
+- [ ] **6.5 [S]** Move invoice PDF generation, the Cloudinary upload and the email **out of** the webhook transaction, into a background step. The webhook must answer in under 5 seconds.
+- [ ] **6.6 [S]** Fix the invoice data: `invoiceId` should be the payment or invoice number, not the patient id. Use a readable invoice number such as `INV-2026-000123`.
+- [ ] **6.7 [S]** Implement refunds through `stripe.refunds.create` and store the refund id. Follow the cancellation policy from 5.13.
+- [ ] **6.8 [S]** Make `POST /initiate-payment/:id` work for pay-later appointments:
+  - check ownership, UNPAID status and that the deadline hasn't passed;
+  - reuse an open session if one exists.
+- [ ] **6.9 [S]** Add a daily reconciliation job that compares Stripe payments with DB payments and alerts on any mismatch.
+- [ ] **6.10 [C]** Build the payment success and cancel pages:
+  - show a clear status message;
+  - poll the appointment until the webhook has updated it;
+  - the redirect target must be a real page (today `/dashboard/my-appointments` is a stub).
+- [ ] **6.11 [S+C]** Use Stripe **test mode** keys locally and in CI, and **live** keys only in production. Never let the two mix.
+
+**Phase done when:** all of these leave correct DB states:
+- pay
+- cancel before paying
+- pay after the deadline (refunded automatically)
+- refund
+- the webhook delivering the same event twice
+
+---
+
+## Phase 7: Consultation: video call, prescription, review
+
+**Goal:** the appointment itself happens inside the app.
+
+### Video call
+- [ ] **7.1 [S]** Choose a provider: Daily.co, Agora, 100ms, Twilio or self-hosted Jitsi.
+  - `videoCallingId` is the room id.
+  - The provider's join token is created **on the server**.
+- [ ] **7.2 [S]** Add `GET /appointments/:id/join` that returns a short-lived join token only when **all** of these are true:
+  - the caller is the patient or doctor of this appointment;
+  - the appointment is PAID;
+  - its status is SCHEDULED or INPROGRESS;
+  - the time is between 10 minutes before start and the end of the slot.
+- [ ] **7.3 [C]** Build the video call page `/consultation/room/[appointmentId]`:
+  - waiting room;
+  - camera and mic check;
+  - when the doctor joins, the appointment moves to INPROGRESS.
+
+### Prescription
+- [ ] **7.4 [S]** Validate prescriptions with the existing `prescription.validation.ts`. Include `instructions`, `followUpDate` and a list of medicines (name, dose, frequency, duration).
+- [ ] **7.5 [S]** Allow a prescription only for COMPLETED or INPROGRESS appointments, by that appointment's doctor, and only one per appointment.
+- [ ] **7.6 [S]** Generate the PDF and email it **after** the DB commit. A failed email is retried and never breaks the save.
+- [ ] **7.7 [C]** Build the doctor's prescription form and list (`doctor/dashboard/prescriptions`).
+- [ ] **7.8 [C]** Build the patient's prescriptions page `/dashboard/my-prescriptions` with a PDF download.
+
+### Review
+- [ ] **7.9 [S]** Allow a review only for COMPLETED appointments, once per appointment:
+  - the rating is an integer from 1 to 5;
+  - the comment has a maximum of 1000 characters and its HTML is stripped.
+- [ ] **7.10 [S]** Update the doctor's `averageRating` and `reviewCount` in the same transaction as each review change.
+- [ ] **7.11 [C]** Build a review form on completed appointments, the doctor's "My reviews" page and reviews on the public doctor profile.
+
+**Phase done when:** these work end to end:
+- the patient books, pays and joins the call at the right time
+- the doctor completes the appointment and writes the prescription
+- the patient gets the PDF and leaves a review
+
+---
+
+## Phase 8: Frontend: finish every feature
+
+**Goal:** no placeholder pages, every nav link works, and the UI handles loading, empty and error states.
+
+### 8A. Design system: follow the "Pranovate" design (do this first in Phase 8)
+Reference: <https://dribbble.com/shots/27693703-Pranovate-Doctor-Appointment-Management-Dashboard>.
+Follow it as closely as possible on every dashboard (doctor, patient, admin), using the same shell with different nav items.
+
+What the design looks like:
+- **Layout:**
+  - fixed **dark navy sidebar** on the left (about 240 px wide), logo at the top, icon and label nav items;
+  - the **active item is a solid blue rounded pill** with white text;
+  - **Logout** sits in a bordered box at the bottom.
+- **Top bar (white):**
+  - rounded grey search input ("Search patients, appointments, prescriptions…");
+  - a green **"Available" toggle** (doctor online or offline);
+  - a primary blue **"+ Add …"** button;
+  - a notification bell;
+  - avatar, name and role.
+- **Page header:** "Hello, Dr. {name}" with today's date in small grey text below.
+- **Stat cards (a row of 3):**
+  - label at the top left and a small **tinted icon square** at the top right;
+  - a big number;
+  - a green trend line ("↑ 2 vs yesterday").
+- **Table card ("Upcoming Appointments"):**
+  - a "View All >" link at the top right;
+  - rows show avatar, name, and gender icon with age, then date, time, and a **type badge** (light-blue "Book Visit" or light-green "Video Consult");
+  - **action buttons** (teal "Check In", blue "Join Now") and a ⋮ menu.
+- **Style:**
+  - light grey page background;
+  - white cards with a 1 px light border, about 12 px radius and a very soft shadow;
+  - a clean sans-serif font (Inter-like);
+  - small text (12–14 px).
+- **Approximate colours** (estimated from the shot; adjust by eye):
+
+  | Use | Colour |
+  |-----|--------|
+  | sidebar | `#0B1B2E` |
+  | primary blue | `#1565D8` |
+  | teal action | `#14B8A6` |
+  | success green | `#16A34A` |
+  | page background | `#F4F6F9` |
+  | border | `#E5E7EB` |
+  | text | `#111827` |
+  | muted text | `#6B7280` |
+
+- [ ] **8.D1 [C]** Put the colours above into `client/src/app/globals.css` as shadcn CSS variables (`--primary`, `--sidebar`, `--background`, `--border`, …), and add a dark-mode version. Set the font (Inter via `next/font`).
+- [ ] **8.D2 [C]** Rebuild the dashboard shell (`DashboardSidebar`, `DashboardNavbar`, `(dashboardLayout)/layout.tsx`) to match: navy sidebar, blue active pill, Logout at the bottom, white top bar with search, availability toggle (doctor only), primary action button, bell and user chip. On mobile it becomes a drawer.
+- [ ] **8.D3 [C]** Restyle `StatsCard` to match: icon square at the top right, big number, green or red trend line. Use it on all three dashboards.
+- [ ] **8.D4 [C]** Restyle `DataTable` to match: card with a title and a "View All" link, avatar cell with gender and age, badge cell for type and status, action buttons and a ⋮ menu.
+- [ ] **8.D5 [C]** Doctor dashboard home = the shot itself: greeting, 3 stat cards (appointments today, total patients, today's earnings), then upcoming appointments with **Check In** (in-person) or **Join Now** (video) buttons.
+- [ ] **8.D6 [C]** Apply the same look to the patient and admin dashboards and the auth pages, so the whole app feels like one product.
+
+### Public
+- [ ] **8.1 [C]** Home page: hero, search by specialty or doctor, featured doctors, how-it-works section and footer. Replace "Hello World".
+- [ ] **8.2 [C]** `/consultation`: search, filters (specialty, fee, rating, gender), sorting and pagination, with the filters stored in the URL.
+- [ ] **8.3 [C]** `/consultation/doctor/[id]`: profile, available-slots calendar (from 5.9), reviews and a Book button.
+- [ ] **8.4 [C]** Decide what to do with `diagnostics`, `health-plans`, `medicine` and `ngos`: build them or **remove** them from the nav. Don't ship empty pages.
+
+### Patient (`/dashboard`)
+- [ ] **8.5 [C]** Dashboard home: upcoming appointment card, quick actions and stats.
+- [ ] **8.6 [C]** `/dashboard/my-appointments`: tabs for upcoming, past and cancelled.
+  - Actions: pay now, cancel, reschedule, join call, view prescription, leave review.
+  - Move the list that is currently on `/dashboard/page.tsx` here.
+- [ ] **8.7 [C]** Book appointment flow: pick doctor → pick slot → choose pay now or pay later → confirmation page.
+- [ ] **8.8 [C]** `/dashboard/health-records`: health data form and medical report upload, list and delete.
+- [ ] **8.9 [C]** `/my-profile`: view and edit the profile and photo.
+
+### Doctor (`/doctor/dashboard`)
+- [ ] **8.10 [C]** Dashboard home: today's appointments, earnings and rating.
+- [ ] **8.11 [C]** Appointments: list with filters. Actions: start, complete, cancel, join call and write prescription.
+- [ ] **8.12 [C]** My schedules: calendar view, plus picking and removing slots (with the 2.19 fix).
+- [ ] **8.13 [C]** My reviews and prescriptions pages.
+
+### Admin (`/admin/dashboard`)
+- [ ] **8.14 [C]** Patients management: list, view and block/unblock.
+- [ ] **8.15 [C]** Admins management (SUPER_ADMIN only): create, edit and delete admins, and change roles.
+- [ ] **8.16 [C]** Specialties management: create with an icon, edit and soft-delete.
+- [ ] **8.17 [C]** Doctor specialties and doctor schedules management pages.
+- [ ] **8.18 [C]** Appointments management: list, filter, view and cancel with refund.
+- [ ] **8.19 [C]** Payments management: list, filter, view invoices and refund.
+- [ ] **8.20 [C]** Prescriptions and reviews management: list, view and moderate (hide abusive reviews).
+- [ ] **8.21 [C]** Use the unused `dashboardData` in the dashboard home charts (`admin/dashboard/page.tsx:20`).
+
+### Quality for every page
+- [ ] **8.22 [C]** Every data page has a loading skeleton, an empty state, an error state with a retry button, and toast messages for mutations.
+- [ ] **8.23 [C]** Every form:
+  - uses the **same zod schema rules** as the server;
+  - disables the submit button while sending;
+  - shows field errors.
+- [ ] **8.24 [C]** After every mutation, invalidate the related TanStack Query keys so lists refresh.
+- [ ] **8.25 [C]** Fix `UserDropdown` markup (items inside the separator, `Link` without `asChild`) and use stable React `key`s instead of the array index.
+- [ ] **8.26 [C]** Make it responsive: test every page at 375 px (phone), 768 px (tablet) and desktop.
+- [ ] **8.27 [C]** Accessibility:
+  - labels on all inputs;
+  - keyboard navigation in dialogs;
+  - colour contrast of at least 4.5:1;
+  - `alt` text on images.
+- [ ] **8.28 [C]** Import only the lucide icons you use in `iconMapper.ts`, instead of `import * as Icons`, to cut bundle size.
+- [ ] **8.29 [C]** Remove all `console.log` calls (about 40) and add an ESLint `no-console` rule.
+
+**Phase done when:** every link in every role's sidebar opens a working page, and a full click-through shows no placeholder text.
+
+---
+
+## Phase 9: Platform security hardening
+
+**Goal:** a defense-in-depth setup that follows the OWASP Top 10.
+
+### Server
+- [ ] **9.1 [S]** Add `helmet()` with sensible defaults.
+- [ ] **9.2 [S]** Add rate limiting with `express-rate-limit`, using a Redis store when there is more than one instance:
+  - login, register and OTP endpoints: 5 requests per minute per IP and per email;
+  - forgot/reset password: 3 requests per 15 minutes;
+  - the general API: 100 requests per minute per user;
+  - booking: 10 requests per minute per user.
+- [ ] **9.3 [S]** Put the better-auth handler (`/api/auth/*`) **before** `express.json()`, as its docs require (`server/src/app.ts:47`). Make the `/api/v1/auth/*` wrappers go through rate limiting.
+- [ ] **9.4 [S]** Configure CORS with an **exact allowlist** from env (`FRONTEND_URL` only in production) and `credentials: true`. Never use `*`.
+- [ ] **9.5 [S]** Protect against CSRF:
+  - use `SameSite=Lax` cookies;
+  - remove `express.urlencoded` if nothing needs it;
+  - check that the `Origin` or `Referer` header matches the allowlist on every state-changing request.
+- [ ] **9.6 [S]** Limit request size to `express.json({ limit: "100kb" })`.
+- [ ] **9.7 [S]** File uploads:
+  - allowlist MIME types (jpg, png, webp, pdf) **and check the file's magic bytes**;
+  - a maximum of 5 MB per file and 5 files;
+  - random file names;
+  - clean up on every upload type, including `fields()` and arrays (`deletedUploadedFilesFromGlobalErrorHandler.ts:11,18`).
+- [ ] **9.8 [S]** Validate env vars at startup with a zod schema that includes `DATABASE_URL`. Remove unused keys:
+  - `JWT_SECRET_KEY`, `JWT_EXPIRES_IN`
+  - `BETTER_AUTH_SESSION_TOKEN_*`
+  - `GOOGLE_CALLBACK_URL`
+  - the duplicate `BETTER_AUTH_URL`
+- [ ] **9.9 [S]** Secrets:
+  - at least 32 random bytes each;
+  - different secrets for access tokens, refresh tokens and better-auth;
+  - different values per environment;
+  - kept in the hosting provider's secret store, not in a `.env` file in production.
+- [ ] **9.10 [S]** Error responses: one consistent shape `{ success, message, errorSources }`, with no stack traces or DB details in production.
+- [ ] **9.11 [S]** Use a structured logger (`pino`) with a request id and **redaction** of these fields: `password`, `token`, `cookie`, `authorization`, `otp`, `email`, `contactNumber`.
+- [ ] **9.12 [S]** Parse query params safely: `QueryBuilder` must not turn numeric strings into numbers for string fields such as `contactNumber`. Allowlist `sortBy`, `fields` and `include` per model.
+- [ ] **9.13 [S]** Run `npm audit` and fix high and critical issues. Turn on Dependabot or Renovate. Move `express` and `@types/*` to the correct dependency groups.
+
+### Client
+- [ ] **9.14 [C]** Set security headers in `next.config.ts`:
+  - a `Content-Security-Policy` that allows your API, Stripe, Cloudinary and the video provider;
+  - `X-Frame-Options: DENY` (except the video page if the provider needs it);
+  - `Referrer-Policy: strict-origin-when-cross-origin`;
+  - `Permissions-Policy` allowing camera and microphone only on the call page;
+  - `Strict-Transport-Security`.
+- [ ] **9.15 [C]** Never render user HTML with `dangerouslySetInnerHTML`. Escape review and prescription text.
+- [ ] **9.16 [C]** URL-encode every dynamic value in URLs (`encodeURIComponent`), for example emails in redirect URLs (`login/_action.ts:36,61`).
+- [ ] **9.17 [C]** Only `NEXT_PUBLIC_API_BASE_URL` may be public. Keep `ACCESS_TOKEN_SECRET` server-only, and consider removing it from the client entirely by trusting `/auth/me` instead.
+- [ ] **9.18 [C]** Move `@types/jsonwebtoken` to devDependencies, run `npm audit` and turn on Dependabot.
+
+**Phase done when:** an OWASP ZAP baseline scan (or similar) against staging shows no High findings, and the rate limits are proven by a test.
+
+---
+
+## Phase 10: Medical data protection and privacy
+
+**Goal:** patient health data is treated as sensitive, following HIPAA/GDPR-style practice.
+
+- [ ] **10.1 [S]** Make medical reports, prescriptions and invoices **private**: upload them to Cloudinary as `type: "authenticated"` (or to S3 private storage). Serve them only through **signed URLs that expire** (for example after 5 minutes), from an endpoint that checks ownership.
+- [ ] **10.2 [S]** Add an **audit log** table (`AuditLog`: who, what action, which record, when, IP). Record:
+  - logins and failed logins;
+  - role and status changes;
+  - every read of medical reports or prescriptions;
+  - refunds;
+  - admin deletes.
+- [ ] **10.3 [S]** Use soft delete everywhere for users, doctors, specialties and appointments. Every query filters `isDeleted: false`, ideally through a Prisma client extension so no query can forget it.
+- [ ] **10.4 [S]** Encrypt the most sensitive columns (for example health conditions and allergies) at the application level, or at least make sure the DB disk and backups are encrypted.
+- [ ] **10.5 [S]** Support data export and deletion requests: a patient can download their data, and request account deletion, which anonymizes personal data while keeping financial records.
+- [ ] **10.6 [S]** Data retention: write down how long you keep logs, appointments and medical files, and automate cleanup where it is allowed.
+- [ ] **10.7 [C]** Pages and consent:
+  - add privacy policy and terms pages;
+  - add a consent checkbox at register;
+  - add a cookie notice if you use analytics.
+- [ ] **10.8 [S+C]** Never put personal or health data in URLs, logs, analytics events or error-tracking payloads. Configure Sentry to scrub it.
+
+**Phase done when:** a medical report URL copied from the browser stops working after it expires, and every read of it appears in the audit log.
+
+---
+
+## Phase 11: Testing
+
+**Goal:** important flows are tested automatically, and you catch breakages before users do.
+
+### Server (Vitest + Supertest + a real test Postgres)
+- [ ] **11.1 [S]** Set up Vitest and a test DB using Docker or Testcontainers. Reset the DB between test files. Add an `npm test` script.
+- [ ] **11.2 [S]** Add test factories that create a user, patient, doctor, admin, schedule and appointment.
+- [ ] **11.3 [S]** Auth tests:
+  - register, verify, login, refresh, refresh-token reuse detection, logout, change password and reset password;
+  - a blocked user is rejected;
+  - an unverified user is rejected.
+- [ ] **11.4 [S]** Permission tests: generate one test per row of the permission matrix (4.1), covering every role on every endpoint plus an IDOR attempt.
+- [ ] **11.5 [S]** Booking tests:
+  - concurrent booking (20 parallel requests give exactly 1 success);
+  - past slot;
+  - deleted doctor;
+  - overlapping appointments;
+  - pay later.
+- [ ] **11.6 [S]** State machine tests: every allowed and disallowed transition.
+- [ ] **11.7 [S]** Payment tests: webhook with a valid and an invalid signature, a duplicate event, a late payment that is auto-refunded, and an expired session. Mock Stripe.
+- [ ] **11.8 [S]** Cron tests: only expired unpaid appointments are cancelled, and a slot that someone else re-booked is not released.
+- [ ] **11.9 [S]** Validation tests: unknown fields are rejected (`.strict()`), the size limits work and bad JSON returns 400.
+
+### Client
+- [ ] **11.10 [C]** Unit tests with Vitest + React Testing Library for:
+  - `authUtils` (redirect validation and route owner);
+  - the zod schemas;
+  - the login and register forms.
+- [ ] **11.11 [C]** Proxy tests: every role on every route group, with expired, missing and invalid tokens.
+- [ ] **11.12 [C]** End-to-end tests with Playwright against the local server and a test DB:
+  - patient: register → verify → book → pay (Stripe test card) → see the appointment;
+  - doctor: log in → pick slots → start → complete → write prescription;
+  - admin: create doctor → create schedule → view payments;
+  - security: a patient opening `/admin/dashboard` is redirected.
+- [ ] **11.13 [S+C]** Coverage goal: at least 80 % on the auth, appointment and payment services. Don't chase 100 % elsewhere.
+
+**Phase done when:** `npm test` passes in both repos, and the E2E suite passes locally and in CI.
+
+---
+
+## Phase 12: Performance and data quality
+
+- [ ] **12.1 [S]** Add DB indexes for real query patterns:
+  - `Appointment(patientId, status)`, `Appointment(doctorId, status)`;
+  - `Schedule(startDateTime)`;
+  - `Payment(status)`;
+  - `Doctor(isDeleted)`.
+  - Check slow queries with `EXPLAIN ANALYZE`.
+- [ ] **12.2 [S]** Remove N+1 queries and huge includes. List endpoints should `select` only the columns the UI shows.
+- [ ] **12.3 [S]** Keep heavy work (PDF, email, Cloudinary upload) out of request/response handlers. Use a job queue such as BullMQ + Redis with retries.
+- [ ] **12.4 [S]** Cache the public doctor list and specialties for a short time (60 s) using Redis or HTTP cache headers.
+- [ ] **12.5 [C]** Use Server Components for read-only pages, `next/image` for photos (configure Cloudinary `remotePatterns`), and dynamic import for charts.
+- [ ] **12.6 [C]** Set a sensible TanStack Query `staleTime`, and don't refetch on every window focus for admin tables.
+- [ ] **12.7 [S]** Seed data script for development: 10 specialties, 20 doctors, schedules for the next 14 days and sample patients. Never run it in production.
+
+---
+
+## Phase 13: DevOps, deployment and monitoring
+
+### Docker
+- [ ] **13.1 [S]** Make the server Dockerfile multi-stage:
+  - `deps` → `build` (`prisma generate` + `tsc`) → `runtime` (`node:22-alpine`, production deps only);
+  - run as the **non-root** `node` user;
+  - `CMD ["node", "dist/server.js"]`;
+  - fix the missing `prisma:generate` script.
+- [ ] **13.2 [S]** Run migrations with `prisma migrate deploy` as a separate step or job before the app starts. Never use `migrate dev` or `db push` in production.
+- [ ] **13.3 [C]** Make the client Dockerfile multi-stage with `output: "standalone"` in `next.config.ts`:
+  - `next build` in the build stage, `node server.js` at runtime;
+  - non-root user;
+  - no `npm install` in `CMD`.
+- [ ] **13.4 [S+C]** Add a `docker-compose.yml` at `mission-6/` with Postgres, Redis, the server and the client for one-command local start-up.
+
+### CI/CD (GitHub Actions)
+- [ ] **13.5 [S+C]** On every PR: install → lint → type-check → test → build. Block the merge if anything fails.
+- [ ] **13.6 [S+C]** Turn on secret scanning (`gitleaks`) and dependency audit in CI.
+- [ ] **13.7 [S+C]** Use three environments, **dev**, **staging** and **production**, each with its own DB, Stripe keys and secrets. Deploy to staging automatically and to production manually.
+
+### Operations
+- [ ] **13.8 [S]** Add `GET /health` (the process is alive) and `GET /ready` (DB and Redis reachable), and use them in the hosting health checks.
+- [ ] **13.9 [S]** Graceful shutdown on SIGTERM:
+  - stop accepting new requests;
+  - finish in-flight ones;
+  - stop the cron;
+  - `prisma.$disconnect()`;
+  - exit.
+- [ ] **13.10 [S+C]** Error tracking with Sentry (or similar) on both apps, with personal data scrubbing (10.8).
+- [ ] **13.11 [S]** Uptime monitoring and alerts for: API down, webhook failures, cron failures, email failures and payment mismatches (6.9).
+- [ ] **13.12 [S]** Automated daily DB backups with at least 7–30 days of retention. **Test a restore** at least once.
+- [ ] **13.13 [S+C]** HTTPS everywhere. Redirect HTTP to HTTPS. Point the Stripe webhook at the production HTTPS URL.
+
+---
+
+## Phase 14: Launch checklist
+
+Tick these on the **staging** environment right before you go live.
+
+- [ ] **14.1** Every box in Phases 0–13 is ticked, or deliberately deferred with a written reason.
+- [ ] **14.2** Production uses **live** Stripe keys, a fresh webhook secret, and secrets that are new and different from development.
+- [ ] **14.3** The super admin password has been changed after the first login, and the seed is disabled.
+- [ ] **14.4** `NODE_ENV=production`, no stack traces in responses and no `console.log` left.
+- [ ] **14.5** CORS allows only the production frontend URL. Cookies are `secure`.
+- [ ] **14.6** Full E2E run on staging passes, including a real Stripe test-mode payment and a refund.
+- [ ] **14.7** Security scan (OWASP ZAP baseline) shows no High findings, and `npm audit` shows no High or Critical issues.
+- [ ] **14.8** The backup restore has been tested, and the monitoring and alerts have fired at least once in a test.
+- [ ] **14.9** Privacy policy, terms and the support contact are published.
+- [ ] **14.10** A rollback plan is written down: the previous Docker image tag and how to roll back a migration safely.
+
+---
+
+## Notes and decisions log
+
+Write down important decisions here so you remember why things are the way they are.
+
+| Date | Decision | Reason |
+|------|----------|--------|
+| 2026-10-01 | Plan created from the full project review | — |
+| | | |

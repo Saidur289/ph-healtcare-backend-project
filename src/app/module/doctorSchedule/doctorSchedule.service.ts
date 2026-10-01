@@ -3,8 +3,8 @@ import { IQueryParams } from "../../interface/query.interface";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { QueryBuilder } from "../../utils/QueryBuilder";
-import { doctorFilterableFields } from "../doctor/doctor.constant";
 import {
+  doctorScheduleFilterableFields,
   doctorScheduleIncludeConfig,
   doctorScheduleSearchableFields,
 } from "./doctorSchedule.constant";
@@ -47,19 +47,23 @@ const getMyDoctorSchedules = async (
     Prisma.DoctorSchedulesInclude
   >(
     prisma.doctorSchedules,
-    { doctorId: doctorData.id, ...query },
+    query,
     {
       searchableFields: doctorScheduleSearchableFields,
-      filterableFields: doctorFilterableFields,
+      filterableFields: doctorScheduleFilterableFields,
+      // the "pick schedules" modal loads all of the doctor's own slots at once
+      maxLimit: 1000,
     },
   );
   const result = await queryBuilder
     .search()
     .filter()
     .paginate()
-    .dynamicInclude(doctorScheduleIncludeConfig)
+    .include({ schedule: true })
     .sort()
     .fields()
+    // applied last, so a ?doctorId= query param can never show another doctor's slots
+    .where({ doctorId: doctorData.id })
     .execute();
   return result;
 };
@@ -70,7 +74,7 @@ const getAllDoctorSchedules = async (query: IQueryParams) => {
     Prisma.DoctorSchedulesInclude
   >(prisma.doctorSchedules, query, {
     searchableFields: doctorScheduleSearchableFields,
-    filterableFields: doctorFilterableFields,
+    filterableFields: doctorScheduleFilterableFields,
   });
   const result = await queryBuilder
     .search()

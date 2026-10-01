@@ -22,7 +22,7 @@ router.get(
   checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
   ReviewController.getAllReview,
 );
-router.get(
+router.patch(
   "/update-review/:id",
   checkAuth(Role.PATIENT),
   validateRequest(ReviewValidation.UpdateReviewZodSchema),
