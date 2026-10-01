@@ -67,8 +67,9 @@ This plan takes the current `server/` (Express + Prisma) and `client/` (Next.js 
 - [ ] **0.1 [S+C]** Commit or stash the current uncommitted work in both repos. Remove the debug `console.log` in `client/src/components/modules/Admin/ScheduleManagement/SchedulesTable.tsx:64` first.
 - [ ] **0.2 [S+C]** Create a new branch in each repo, for example `hardening/phase-1`. Keep `master` deployable.
 - [ ] **0.3 [S]** Commit the Prettier-only reformatting separately from logic changes so diffs stay readable.
-- [ ] **0.4 [S]** Fix `server/tsconfig.json`: the `ignoreDeprecations: "6.0"` value is invalid on TypeScript 5.9. Remove it or set it to `"5.0"`.
+- [x] **0.4 [S]** Fix `server/tsconfig.json`: the `ignoreDeprecations: "6.0"` value is invalid on TypeScript 5.9. Remove it or set it to `"5.0"`.
   - Done when `npx tsc --noEmit` passes.
+  - _Done: set to "5.0"; `tsc --noEmit` is clean._
 - [ ] **0.5 [C]** Delete the stale `client/.next` folder and confirm `npx tsc --noEmit` shows only real errors.
 - [ ] **0.6 [S]** Add a `start` script (`node dist/server.js`) and make the compiled output runnable. With ESM and `moduleResolution: bundler`, either:
   - switch to `module/moduleResolution: NodeNext` and add `.js` extensions to imports, or
@@ -718,12 +719,18 @@ What the design looks like:
   | text | `#111827` |
   | muted text | `#6B7280` |
 
-- [ ] **8.D1 [C]** Put the colours above into `client/src/app/globals.css` as shadcn CSS variables (`--primary`, `--sidebar`, `--background`, `--border`, …), and add a dark-mode version. Set the font (Inter via `next/font`).
-- [ ] **8.D2 [C]** Rebuild the dashboard shell (`DashboardSidebar`, `DashboardNavbar`, `(dashboardLayout)/layout.tsx`) to match: navy sidebar, blue active pill, Logout at the bottom, white top bar with search, availability toggle (doctor only), primary action button, bell and user chip. On mobile it becomes a drawer.
-- [ ] **8.D3 [C]** Restyle `StatsCard` to match: icon square at the top right, big number, green or red trend line. Use it on all three dashboards.
-- [ ] **8.D4 [C]** Restyle `DataTable` to match: card with a title and a "View All" link, avatar cell with gender and age, badge cell for type and status, action buttons and a ⋮ menu.
-- [ ] **8.D5 [C]** Doctor dashboard home = the shot itself: greeting, 3 stat cards (appointments today, total patients, today's earnings), then upcoming appointments with **Check In** (in-person) or **Join Now** (video) buttons.
+- [x] **8.D1 [C]** Put the colours above into `client/src/app/globals.css` as shadcn CSS variables (`--primary`, `--sidebar`, `--background`, `--border`, …), and add a dark-mode version. Set the font (Inter via `next/font`).
+  - _Done: design tokens (hex) + dark set in globals.css, soft tints (success/teal/warning/danger), Inter via next/font, next-themes toggle in the top bar._
+- [x] **8.D2 [C]** Rebuild the dashboard shell (`DashboardSidebar`, `DashboardNavbar`, `(dashboardLayout)/layout.tsx`) to match: navy sidebar, blue active pill, Logout at the bottom, white top bar with search, availability toggle (doctor only), primary action button, bell and user chip. On mobile it becomes a drawer.
+  - _Done: shared SidebarNav (navy, blue pill, sub-page matching, Logout box) for desktop and the mobile drawer; top bar with role-based search + "+" action, doctor Available switch (PATCH /doctors/me/availability, saved on Doctor.isAvailable), theme toggle, bell with real items (calls within 24 h, unpaid bookings), user chip._
+- [x] **8.D3 [C]** Restyle `StatsCard` to match: icon square at the top right, big number, green or red trend line. Use it on all three dashboards.
+  - _Done: tones, icon square, big number, up/down/flat trend line; used on all three homes._
+- [x] **8.D4 [C]** Restyle `DataTable` to match: card with a title and a "View All" link, avatar cell with gender and age, badge cell for type and status, action buttons and a ⋮ menu.
+  - _Done: card with title + View All, muted header row, row action buttons + ⋮ menu, UserInfoCell (avatar, gender, age), StatusPill badges; fixed the empty-row colSpan._
+- [x] **8.D5 [C]** Doctor dashboard home = the shot itself: greeting, 3 stat cards (appointments today, total patients, today's earnings), then upcoming appointments with **Check In** (in-person) or **Join Now** (video) buttons.
+  - _Done: greeting + date, Appointments Today / Total Patients / Today's Earnings with vs-yesterday trends (stats API now returns today/yesterday numbers in APP_TIMEZONE, default Asia/Dhaka, queries in parallel), Upcoming Appointments with Join Now, rating and status cards. There is no in-person visit type in this app, so there is no Check In button._
 - [ ] **8.D6 [C]** Apply the same look to the patient and admin dashboards and the auth pages, so the whole app feels like one product.
+  - _In progress: patient and admin homes done. The auth pages already use the new tokens and font; a full restyle of the auth and list pages is next._
 
 ### Public
 - [ ] **8.1 [C]** Home page: hero, search by specialty or doctor, featured doctors, how-it-works section and footer. Replace "Hello World".
@@ -732,7 +739,8 @@ What the design looks like:
 - [ ] **8.4 [C]** Decide what to do with `diagnostics`, `health-plans`, `medicine` and `ngos`: build them or **remove** them from the nav. Don't ship empty pages.
 
 ### Patient (`/dashboard`)
-- [ ] **8.5 [C]** Dashboard home: upcoming appointment card, quick actions and stats.
+- [x] **8.5 [C]** Dashboard home: upcoming appointment card, quick actions and stats.
+  - _Done: stats (upcoming, prescriptions, total paid), next appointment card (Join / Pay / waiting room), quick actions._
 - [ ] **8.6 [C]** `/dashboard/my-appointments`: tabs for upcoming, past and cancelled.
   - Actions: pay now, cancel, reschedule, join call, view prescription, leave review.
   - Move the list that is currently on `/dashboard/page.tsx` here.
@@ -741,7 +749,8 @@ What the design looks like:
 - [ ] **8.9 [C]** `/my-profile`: view and edit the profile and photo.
 
 ### Doctor (`/doctor/dashboard`)
-- [ ] **8.10 [C]** Dashboard home: today's appointments, earnings and rating.
+- [x] **8.10 [C]** Dashboard home: today's appointments, earnings and rating.
+  - _Done with 8.D5._
 - [ ] **8.11 [C]** Appointments: list with filters. Actions: start, complete, cancel, join call and write prescription.
 - [ ] **8.12 [C]** My schedules: calendar view, plus picking and removing slots (with the 2.19 fix).
 - [ ] **8.13 [C]** My reviews and prescriptions pages.
@@ -754,23 +763,27 @@ What the design looks like:
 - [ ] **8.18 [C]** Appointments management: list, filter, view and cancel with refund.
 - [ ] **8.19 [C]** Payments management: list, filter, view invoices and refund.
 - [ ] **8.20 [C]** Prescriptions and reviews management: list, view and moderate (hide abusive reviews).
-- [ ] **8.21 [C]** Use the unused `dashboardData` in the dashboard home charts (`admin/dashboard/page.tsx:20`).
+- [x] **8.21 [C]** Use the unused `dashboardData` in the dashboard home charts (`admin/dashboard/page.tsx:20`).
+  - _Done: admin home uses all dashboardData (4 stat cards, bar and pie charts in the design palette)._
 
 ### Quality for every page
 - [ ] **8.22 [C]** Every data page has a loading skeleton, an empty state, an error state with a retry button, and toast messages for mutations.
+  - _Started: shared DashboardSkeleton on every dashboard loading.tsx, plus ErrorState (retry) and EmptyState components._
 - [ ] **8.23 [C]** Every form:
   - uses the **same zod schema rules** as the server;
   - disables the submit button while sending;
   - shows field errors.
 - [ ] **8.24 [C]** After every mutation, invalidate the related TanStack Query keys so lists refresh.
-- [ ] **8.25 [C]** Fix `UserDropdown` markup (items inside the separator, `Link` without `asChild`) and use stable React `key`s instead of the array index.
+- [x] **8.25 [C]** Fix `UserDropdown` markup (items inside the separator, `Link` without `asChild`) and use stable React `key`s instead of the array index.
+  - _Done: UserDropdown rebuilt (grouped items, Link via asChild, shared useLogout); nav keys use href/title._
 - [ ] **8.26 [C]** Make it responsive: test every page at 375 px (phone), 768 px (tablet) and desktop.
 - [ ] **8.27 [C]** Accessibility:
   - labels on all inputs;
   - keyboard navigation in dialogs;
   - colour contrast of at least 4.5:1;
   - `alt` text on images.
-- [ ] **8.28 [C]** Import only the lucide icons you use in `iconMapper.ts`, instead of `import * as Icons`, to cut bundle size.
+- [x] **8.28 [C]** Import only the lucide icons you use in `iconMapper.ts`, instead of `import * as Icons`, to cut bundle size.
+  - _Done: explicit icon map in iconMapper.ts._
 - [ ] **8.29 [C]** Remove all `console.log` calls (about 40) and add an ESLint `no-console` rule.
 
 **Phase done when:** every link in every role's sidebar opens a working page, and a full click-through shows no placeholder text.

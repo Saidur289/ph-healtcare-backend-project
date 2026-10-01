@@ -20,6 +20,8 @@ model Doctor {
   averageRating       Float  @default(0.0)
   // kept in sync with averageRating in the same transaction as every review change
   reviewCount         Int    @default(0)
+  // doctor-controlled "Available" toggle in the dashboard, shown on the public profile
+  isAvailable         Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

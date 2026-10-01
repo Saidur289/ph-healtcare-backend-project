@@ -188,7 +188,7 @@ const getMe = async (user: IRequestUser) => {
       image: true,
       createdAt: true,
       Patient: { select: { ...profileSelect, address: true } },
-      Doctor: { select: { ...profileSelect, designation: true, averageRating: true } },
+      Doctor: { select: { ...profileSelect, designation: true, averageRating: true, isAvailable: true } },
       Admin: { select: profileSelect },
     },
   });

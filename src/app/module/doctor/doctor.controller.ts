@@ -92,7 +92,17 @@ const getAvailableSlots = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const setMyAvailability = catchAsync(async (req: Request, res: Response) => {
+  const result = await DoctorService.setMyAvailability(req.user, req.body.isAvailable);
+  sendResponse(res, {
+    success: true,
+    httpStatusCode: 200,
+    message: result.isAvailable ? "You are now available" : "You are now away",
+    data: result,
+  });
+});
 export const DoctorController = {
+  setMyAvailability,
   getAvailableSlots,
   getAllDoctors,
   getAllDoctorsForAdmin,

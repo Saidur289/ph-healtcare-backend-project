@@ -1,5 +1,5 @@
 import { StatusCodes } from "http-status-codes";
-import { PaymentStatus, Role } from "../../../generated/prisma/enums";
+import { AppointmentStatus, PaymentStatus, Role } from "../../../generated/prisma/enums";
 import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
@@ -91,6 +91,30 @@ const getAdminStatsData = async () => {
     barChartData,
   };
 };
+// "today" is counted in the clinic time zone (taka fees => Bangladesh by default), not UTC
+const APP_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Dhaka";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// start of the local day, `daysAgo` days back, as a UTC instant
+const startOfLocalDay = (daysAgo = 0) => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const localAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  const offset = localAsUtc - Math.floor(now.getTime() / 1000) * 1000;
+  const localMidnight = Date.UTC(get("year"), get("month") - 1, get("day"));
+  return new Date(localMidnight - offset - daysAgo * DAY_MS);
+};
+
 const getDoctorData = async (user: IRequestUser) => {
   // findUniqueOrThrow: with a missing profile, "doctorId: undefined" would match
   // every row and return the whole platform's numbers
@@ -98,60 +122,69 @@ const getDoctorData = async (user: IRequestUser) => {
     where: {
       email: user.email,
     },
+    select: { id: true, averageRating: true, reviewCount: true, isAvailable: true },
   });
-  const reviewCount = await prisma.review.count({
-    where: {
-      doctorId: doctorData.id,
-    },
-  });
-  const appointmentCount = await prisma.appointment.count({
-    where: {
-      doctorId: doctorData.id,
-    },
-  });
-  const totalRevenue = await prisma.payment.aggregate({
-    _sum: {
-      amount: true,
-    },
+  const doctorId = doctorData.id;
+  const today = startOfLocalDay(0);
+  const tomorrow = new Date(today.getTime() + DAY_MS);
+  const yesterday = startOfLocalDay(1);
+  const activeStatuses = { notIn: [AppointmentStatus.CANCELED] };
+  const appointmentsBetween = (from: Date, to: Date) =>
+    prisma.appointment.count({
+      where: { doctorId, status: activeStatuses, schedule: { startDateTime: { gte: from, lt: to } } },
+    });
+  const revenueBetween = (from: Date, to: Date) =>
+    prisma.payment
+      .aggregate({
+        _sum: { amount: true },
+        where: { appointment: { doctorId }, status: PaymentStatus.PAID, paidAt: { gte: from, lt: to } },
+      })
+      .then((r) => r._sum.amount || 0);
 
-    where: {
-      appointment: {
-        doctorId: doctorData.id,
-      },
-      status: PaymentStatus.PAID,
-    },
-  });
-  const appointmentStatusDistribution = await prisma.appointment.groupBy({
-    by: ["status"],
-    _count: {
-      id: true,
-    },
-    where: {
-      doctorId: doctorData.id,
-    },
-  });
-  const patientCount = await prisma.appointment
-    .groupBy({
-      by: ["patientId"],
-      _count: {
-        id: true,
-      },
-      where: {
-        doctorId: doctorData.id,
-      },
-    })
-    .then((results) => results.length);
-  const formattedDistribution = appointmentStatusDistribution.map((item) => ({
-    status: item.status,
-    count: item._count.id,
-  }));
+  // independent queries run in parallel (each Neon round trip is ~300 ms)
+  const [
+    appointmentCount,
+    totalRevenue,
+    appointmentStatusDistribution,
+    patientCount,
+    todayAppointmentCount,
+    yesterdayAppointmentCount,
+    todayRevenue,
+    yesterdayRevenue,
+    newPatientsToday,
+  ] = await Promise.all([
+    prisma.appointment.count({ where: { doctorId } }),
+    prisma.payment
+      .aggregate({ _sum: { amount: true }, where: { appointment: { doctorId }, status: PaymentStatus.PAID } })
+      .then((r) => r._sum.amount || 0),
+    prisma.appointment.groupBy({ by: ["status"], _count: { id: true }, where: { doctorId } }),
+    prisma.appointment.groupBy({ by: ["patientId"], where: { doctorId } }).then((r) => r.length),
+    appointmentsBetween(today, tomorrow),
+    appointmentsBetween(yesterday, today),
+    revenueBetween(today, tomorrow),
+    revenueBetween(yesterday, today),
+    // patients whose first appointment with this doctor was booked today
+    prisma.appointment
+      .groupBy({ by: ["patientId"], where: { doctorId }, _min: { createdAt: true } })
+      .then((rows) => rows.filter((r) => r._min.createdAt && r._min.createdAt >= today).length),
+  ]);
 
   return {
-    reviewCount,
+    reviewCount: doctorData.reviewCount,
+    averageRating: doctorData.averageRating,
+    isAvailable: doctorData.isAvailable,
     patientCount,
+    newPatientsToday,
     appointmentCount,
-    totalRevenue: totalRevenue._sum.amount || 0,
-    appointmentStatusDistribution: formattedDistribution,
+    todayAppointmentCount,
+    yesterdayAppointmentCount,
+    totalRevenue,
+    todayRevenue,
+    yesterdayRevenue,
+    appointmentStatusDistribution: appointmentStatusDistribution.map((item) => ({
+      status: item.status,
+      count: item._count.id,
+    })),
   };
 };
 const getPatientData = async (user: IRequestUser) => {
@@ -159,39 +192,38 @@ const getPatientData = async (user: IRequestUser) => {
     where: {
       email: user.email,
     },
+    select: { id: true },
   });
+  const patientId = patientData.id;
 
-  const appointmentCount = await prisma.appointment.count({
-    where: {
-      patientId: patientData.id,
-    },
-  });
-
-  const reviewCount = await prisma.review.count({
-    where: {
-      patientId: patientData.id,
-    },
-  });
-
-  const appointmentStatusDistribution = await prisma.appointment.groupBy({
-    by: ["status"],
-    _count: {
-      id: true,
-    },
-    where: {
-      patientId: patientData.id,
-    },
-  });
-
-  const formattedDistribution = appointmentStatusDistribution.map((item) => ({
-    status: item.status,
-    count: item._count.id,
-  }));
+  const [appointmentCount, reviewCount, prescriptionCount, upcomingCount, totalPaid, appointmentStatusDistribution] =
+    await Promise.all([
+      prisma.appointment.count({ where: { patientId } }),
+      prisma.review.count({ where: { patientId } }),
+      prisma.prescription.count({ where: { patientId } }),
+      prisma.appointment.count({
+        where: {
+          patientId,
+          status: { in: [AppointmentStatus.SCHEDULED, AppointmentStatus.INPROGRESS] },
+          schedule: { endDateTime: { gte: new Date() } },
+        },
+      }),
+      prisma.payment
+        .aggregate({ _sum: { amount: true }, where: { appointment: { patientId }, status: PaymentStatus.PAID } })
+        .then((r) => r._sum.amount || 0),
+      prisma.appointment.groupBy({ by: ["status"], _count: { id: true }, where: { patientId } }),
+    ]);
 
   return {
     appointmentCount,
     reviewCount,
-    appointmentStatusDistribution: formattedDistribution,
+    prescriptionCount,
+    upcomingCount,
+    totalPaid,
+    appointmentStatusDistribution: appointmentStatusDistribution.map((item) => ({
+      status: item.status,
+      count: item._count.id,
+    })),
   };
 };
 const getPieChartData = async () => {

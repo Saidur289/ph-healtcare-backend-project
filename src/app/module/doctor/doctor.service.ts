@@ -307,7 +307,23 @@ const getAvailableSlots = async (
   }));
 };
 
+// the logged-in doctor turns their "Available" status on or off
+const setMyAvailability = async (user: IRequestUser, isAvailable: boolean) => {
+  const doctor = await prisma.doctor.findFirst({
+    where: { userId: user.userId, isDeleted: false },
+    select: { id: true },
+  });
+  if (!doctor) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Doctor profile not found");
+  }
+  return prisma.doctor.update({
+    where: { id: doctor.id },
+    data: { isAvailable },
+    select: { id: true, isAvailable: true },
+  });
+};
 export const DoctorService = {
+  setMyAvailability,
   getAvailableSlots,
   getAllDoctors,
   getAllDoctorsForAdmin,

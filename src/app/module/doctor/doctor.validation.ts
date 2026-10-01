@@ -1,5 +1,8 @@
 import z from "zod";
 import { Gender } from "../../../generated/prisma/enums";
+export const doctorAvailabilityZodSchema = z.strictObject({
+  isAvailable: z.boolean("isAvailable must be true or false"),
+});
 export const updateDoctorZodSchema = z.strictObject({
   doctor: z
     .strictObject({

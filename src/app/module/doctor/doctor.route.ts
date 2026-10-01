@@ -3,7 +3,7 @@ import { DoctorController } from "./doctor.controller";
 import { checkAuth } from "../../middleware/checkAuth";
 import { Role } from "../../../generated/prisma/enums";
 import { validateRequest } from "../../middleware/validateRequest";
-import { updateDoctorZodSchema } from "./doctor.validation";
+import { doctorAvailabilityZodSchema, updateDoctorZodSchema } from "./doctor.validation";
 
 const router = Router();
 // admin routes must be registered before "/:id"
@@ -16,6 +16,13 @@ router.get(
   "/admin/:id",
   checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
   DoctorController.getDoctorByIdForAdmin,
+);
+// must be registered before "/:id"
+router.patch(
+  "/me/availability",
+  checkAuth(Role.DOCTOR),
+  validateRequest(doctorAvailabilityZodSchema),
+  DoctorController.setMyAvailability,
 );
 // public (safe fields only)
 router.get("/", DoctorController.getAllDoctors);
