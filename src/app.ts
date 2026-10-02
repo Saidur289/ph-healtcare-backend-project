@@ -10,6 +10,9 @@ import { envVars } from "./app/config/env";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./app/lib/auth";
 import qs from "qs";
+import helmet from "helmet";
+import { httpLogger, logger } from "./app/lib/logger";
+import { apiLimiter, corsOptions, verifyOrigin } from "./app/middleware/security";
 import { PaymentController } from "./app/module/payment/payment.controller";
 import { AppointmentService } from "./app/module/appointment/appointment.service";
 import { AppointmentReminder } from "./app/module/appointment/appointment.reminder";
@@ -17,6 +20,19 @@ import { PaymentService } from "./app/module/payment/payment.service";
 import { PrescriptionService } from "./app/module/prescription/prescription.service";
 
 const app = express();
+// behind a load balancer / reverse proxy set TRUST_PROXY to the number of hops (e.g. 1),
+// so req.ip (rate limits) is the client and not the proxy. Default: trust nothing.
+app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY ?? "") ? Number(process.env.TRUST_PROXY) : false);
+app.disable("x-powered-by");
+app.use(httpLogger);
+// security headers. The API only returns JSON / PDFs, so the CSP can be strict.
+app.use(
+  helmet({
+    contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+    crossOriginResourcePolicy: { policy: "same-site" },
+    strictTransportSecurity: envVars.NODE_ENV === "production" ? { maxAge: 31536000, includeSubDomains: true } : false,
+  }),
+);
 //middleware for parsing query string
 app.set("query parser", (str: string) => qs.parse(str));
 app.set("view engine", "ejs");
@@ -26,19 +42,8 @@ app.post(
   PaymentController.handleStripeEventWebhook,
 );
 app.set("views", path.resolve(process.cwd(), `src/app/templates`));
-app.use(
-  cors({
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5000",
-      envVars.FRONTEND_URL,
-      envVars.BETTER_AUTH_URL,
-    ],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Set-Cookie", "Idempotency-Key"],
-  }),
-);
+// exact origin allowlist (see middleware/security.ts)
+app.use(cors(corsOptions));
 // better-auth must be mounted BEFORE express.json() (it reads the raw body itself).
 // Over HTTP we only expose what the Google login flow needs. Everything else
 // (email sign-up/sign-in, password change, ...) must go through /api/v1/auth, which
@@ -48,7 +53,7 @@ const allowPublicBetterAuthPaths = (req: Request, res: Response, next: NextFunct
   const isAllowed =
     PUBLIC_BETTER_AUTH_PATHS.includes(req.path) || req.path.startsWith("/callback/");
   if (!isAllowed) {
-    return res.status(404).json({ success: false, message: "Not found" });
+    return res.status(404).json({ success: false, message: "Not found", errorSources: [{ path: req.path, message: "Not found" }] });
   }
   next();
 };
@@ -56,7 +61,7 @@ app.use("/api/auth", allowPublicBetterAuthPaths, toNodeHandler(auth));
 
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+// (no express.urlencoded: nothing posts HTML forms to the API)
 // Background jobs, every 5 minutes. Each job catches its own errors (the next run retries)
 // and is safe with several servers: advisory lock / per-appointment claim.
 cron.schedule("*/5 * * * *", async () => {
@@ -71,7 +76,7 @@ cron.schedule("*/5 * * * *", async () => {
     try {
       await job();
     } catch (error) {
-      console.error(`Cron (${name}) failed:`, error);
+      logger.error({ err: error, job: name }, "cron job failed");
     }
   }
 });
@@ -80,13 +85,14 @@ cron.schedule("0 3 * * *", async () => {
   try {
     await PaymentService.reconcilePayments();
   } catch (error) {
-    console.error("Cron (payment reconciliation) failed:", error);
+    logger.error({ err: error, job: "payment reconciliation" }, "cron job failed");
   }
 });
-app.use("/api/v1", IndexRoutes);
+// CSRF origin check + general rate limit for the whole API (stricter limits on auth routes)
+app.use("/api/v1", verifyOrigin, apiLimiter, IndexRoutes);
 
 app.get("/", (req: Request, res: Response) => {
-  res.send("Hello, TypeScript Express!");
+  res.json({ success: true, message: "PH Healthcare API" });
 });
 app.use(globalErrorHandler);
 app.use(notFound);

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { bookingLimiter } from "../../middleware/security";
 import { checkAuth } from "../../middleware/checkAuth";
 import { AppointmentController } from "./appointment.controller";
 import { Role } from "../../../generated/prisma/enums";
@@ -15,6 +16,7 @@ router.get(
 );
 router.post(
   "/book-appointment",
+  bookingLimiter,
   checkAuth(Role.PATIENT),
   validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointment,
@@ -37,6 +39,7 @@ router.patch(
 );
 router.post(
   "/book-appointment-with-pay-later",
+  bookingLimiter,
   checkAuth(Role.PATIENT),
   validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointmentWithPayLater,
@@ -48,12 +51,14 @@ router.get(
 );
 router.patch(
   "/reschedule/:id",
+  bookingLimiter,
   checkAuth(Role.PATIENT),
   validateRequest(AppointmentValidation.rescheduleAppointmentZodSchema),
   AppointmentController.rescheduleAppointment,
 );
 router.post(
   "/initiate-payment/:id",
+  bookingLimiter,
   checkAuth(Role.PATIENT),
   AppointmentController.initiatePayment,
 );

@@ -1,0 +1,16 @@
+# Weekly dependency updates; security fixes are opened as soon as an advisory appears.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # one PR for all minor/patch bumps; majors stay separate so they can be reviewed
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

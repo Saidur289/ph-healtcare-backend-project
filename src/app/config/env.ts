@@ -1,140 +1,119 @@
 // load .env here, not only in lib/prisma.ts: whichever module imports env first must see the values
 import "dotenv/config";
-import { StatusCodes } from "http-status-codes";
-import AppError from "../errorHelpers/AppError";
+import { z } from "zod";
 
-interface EnvConfig {
-  PORT: string;
-  BETTER_AUTH_SECRET: string;
-  BETTER_AUTH_URL: string;
-  NODE_ENV: string;
-  DATABASE_URL: string;
-  JWT_SECRET_KEY: string;
-  JWT_EXPIRES_IN: string;
-  ACCESS_TOKEN_SECRET: string;
-  REFRESH_TOKEN_SECRET: string;
-  ACCESS_TOKEN_EXPIRES_IN: string;
-  REFRESH_TOKEN_EXPIRES_IN: string;
-  BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN: string;
-  BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE: string;
-  Email_Sender: {
-    EMAIL_SENDER_USER_PASS: string;
-    EMAIL_SENDER_USER_USER: string;
-    EMAIL_SENDER_USER_SMTP_HOST: string;
-    EMAIL_SENDER_USER_SMTP_PORT: string;
-    EMAIL_SENDER_USER_SMTP_FROM: string;
-  };
-  GOOGLE_CLIENT_ID: string;
-  GOOGLE_SECRET_KEY: string;
-  GOOGLE_CALLBACK_URL: string;
-  FRONTEND_URL: string;
-  CLOUDINARY: {
-    CLOUDINARY_CLOUD_NAME: string;
-    CLOUDINARY_API_KEY: string;
-    CLOUDINARY_API_SECRET: string;
-  };
-  STRIPE: {
-    STRIPE_SECRET_KEY: string;
-    STRIPE_WEBHOOK_SECRET: string;
-  };
-  SUPER_ADMIN_EMAIL: string;
-  SUPER_ADMIN_PASSWORD: string;
-  SUPER_ADMIN_NAME: string;
-}
-const loadEnvVariables = (): EnvConfig => {
-  const requiredEnvVars = [
-    "PORT",
-    "BETTER_AUTH_SECRET",
-    "BETTER_AUTH_URL",
-    "NODE_ENV",
-    "JWT_SECRET_KEY",
-    "JWT_EXPIRES_IN",
-    "ACCESS_TOKEN_SECRET",
-    "REFRESH_TOKEN_SECRET",
-    "ACCESS_TOKEN_EXPIRES_IN",
-    "REFRESH_TOKEN_EXPIRES_IN",
-    "BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN",
-    "BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE",
-    "EMAIL_SENDER_USER_PASS",
-    "EMAIL_SENDER_USER_USER",
-    "EMAIL_SENDER_USER_SMTP_HOST",
-    "EMAIL_SENDER_USER_SMTP_PORT",
-    "EMAIL_SENDER_USER_SMTP_FROM",
-    "GOOGLE_CLIENT_ID",
-    "GOOGLE_SECRET_KEY",
-    "GOOGLE_CALLBACK_URL",
-    "FRONTEND_URL",
-    "CLOUDINARY_CLOUD_NAME",
-    "CLOUDINARY_API_KEY",
-    "CLOUDINARY_API_SECRET",
-    "STRIPE_SECRET_KEY",
-    "STRIPE_WEBHOOK_SECRET",
-    "SUPER_ADMIN_EMAIL",
-    "SUPER_ADMIN_PASSWORD",
-    "SUPER_ADMIN_NAME",
+// Validated once at startup: a missing or malformed value stops the server with a clear list.
+// (JWT_SECRET_KEY, JWT_EXPIRES_IN and GOOGLE_CALLBACK_URL were never read and are no longer required.)
+const text = z.string().trim().min(1, "is required");
+const url = z.url("must be a full URL (https://...)");
+const duration = z.string().regex(/^\d+[smhd]$/, 'must look like "15m", "7d" or "1h"');
+// production secrets: at least 32 random characters (e.g. `openssl rand -base64 32`)
+const secret = text;
+
+const schema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]),
+  PORT: z.string().regex(/^\d+$/, "must be a port number"),
+  DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, "must be a postgres:// connection string"),
+  FRONTEND_URL: url,
+  BETTER_AUTH_URL: url,
+  BETTER_AUTH_SECRET: secret,
+  ACCESS_TOKEN_SECRET: secret,
+  REFRESH_TOKEN_SECRET: secret,
+  ACCESS_TOKEN_EXPIRES_IN: duration,
+  REFRESH_TOKEN_EXPIRES_IN: duration,
+  BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN: duration,
+  BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE: duration,
+  EMAIL_SENDER_USER_PASS: text,
+  EMAIL_SENDER_USER_USER: text,
+  EMAIL_SENDER_USER_SMTP_HOST: text,
+  EMAIL_SENDER_USER_SMTP_PORT: z.string().regex(/^\d+$/, "must be a port number"),
+  EMAIL_SENDER_USER_SMTP_FROM: text,
+  GOOGLE_CLIENT_ID: text,
+  GOOGLE_SECRET_KEY: text,
+  CLOUDINARY_CLOUD_NAME: text,
+  CLOUDINARY_API_KEY: text,
+  CLOUDINARY_API_SECRET: text,
+  STRIPE_SECRET_KEY: z.string().regex(/^sk_(test|live)_/, "must be a Stripe secret key (sk_test_... / sk_live_...)"),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_", "must start with whsec_"),
+  SUPER_ADMIN_EMAIL: z.email("must be an email"),
+  SUPER_ADMIN_PASSWORD: text,
+  SUPER_ADMIN_NAME: text,
+  ALLOW_STRIPE_TEST_IN_PRODUCTION: z.enum(["true", "false"]).optional(),
+});
+
+const fail = (lines: string[]) => {
+  // plain Error: this runs before the app (and its error handler) exists
+  throw new Error(`Invalid environment configuration:\n${lines.map((l) => `  - ${l}`).join("\n")}`);
+};
+
+const loadEnvVariables = () => {
+  const parsed = schema.safeParse(process.env);
+  if (!parsed.success) {
+    fail(parsed.error.issues.map((issue) => `${issue.path.join(".")} ${issue.message}`));
+  }
+  const env = parsed.data!;
+  const isProduction = env.NODE_ENV === "production";
+
+  // secrets: long, random and all different. Hard error in production, warning elsewhere.
+  const secrets = { BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET, ACCESS_TOKEN_SECRET: env.ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET: env.REFRESH_TOKEN_SECRET };
+  const secretProblems = [
+    ...Object.entries(secrets)
+      .filter(([, value]) => value.length < 32)
+      .map(([key]) => `${key} must be at least 32 characters (generate one with: openssl rand -base64 32)`),
+    ...(new Set(Object.values(secrets)).size < 3 ? ["BETTER_AUTH_SECRET, ACCESS_TOKEN_SECRET and REFRESH_TOKEN_SECRET must all be different"] : []),
   ];
-  requiredEnvVars.forEach((varName) => {
-    if (!process.env[varName]) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        `Environment variable ${varName} is required but not defined.`,
-      );
-    }
-  });
+  if (secretProblems.length) {
+    if (isProduction) fail(secretProblems);
+    console.warn(`[env] weak secrets (allowed outside production):\n  - ${secretProblems.join("\n  - ")}`);
+  }
+
   // Never mix Stripe modes: live keys only in production, test keys everywhere else
-  const stripeKey = process.env.STRIPE_SECRET_KEY as string;
-  const isProduction = process.env.NODE_ENV === "production";
-  if (isProduction && !stripeKey.startsWith("sk_live_") && process.env.ALLOW_STRIPE_TEST_IN_PRODUCTION !== "true") {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Production must use a live Stripe key (sk_live_...). Set ALLOW_STRIPE_TEST_IN_PRODUCTION=true only for a staging server.",
-    );
+  if (isProduction && !env.STRIPE_SECRET_KEY.startsWith("sk_live_") && env.ALLOW_STRIPE_TEST_IN_PRODUCTION !== "true") {
+    fail(["Production must use a live Stripe key (sk_live_...). Set ALLOW_STRIPE_TEST_IN_PRODUCTION=true only for a staging server."]);
   }
-  if (!isProduction && stripeKey.startsWith("sk_live_")) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "A live Stripe key (sk_live_...) is not allowed outside production. Use a test key (sk_test_...).",
-    );
+  if (!isProduction && env.STRIPE_SECRET_KEY.startsWith("sk_live_")) {
+    fail(["A live Stripe key (sk_live_...) is not allowed outside production. Use a test key (sk_test_...)."]);
   }
+  if (isProduction && !env.FRONTEND_URL.startsWith("https://")) {
+    fail(["FRONTEND_URL must use https:// in production"]);
+  }
+
+  // same shape as before, so the rest of the code is unchanged
   return {
-    PORT: process.env.PORT,
-    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
-    NODE_ENV: process.env.NODE_ENV,
-    DATABASE_URL: process.env.DATABASE_URL,
-    JWT_SECRET_KEY: process.env.JWT_SECRET_KEY,
-    JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
-    ACCESS_TOKEN_SECRET: process.env.ACCESS_TOKEN_SECRET,
-    REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET,
-    ACCESS_TOKEN_EXPIRES_IN: process.env.ACCESS_TOKEN_EXPIRES_IN,
-    REFRESH_TOKEN_EXPIRES_IN: process.env.REFRESH_TOKEN_EXPIRES_IN,
-    BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN:
-      process.env.BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN,
-    BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE:
-      process.env.BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE,
+    PORT: env.PORT,
+    NODE_ENV: env.NODE_ENV,
+    DATABASE_URL: env.DATABASE_URL,
+    FRONTEND_URL: env.FRONTEND_URL,
+    BETTER_AUTH_URL: env.BETTER_AUTH_URL,
+    BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET,
+    ACCESS_TOKEN_SECRET: env.ACCESS_TOKEN_SECRET,
+    REFRESH_TOKEN_SECRET: env.REFRESH_TOKEN_SECRET,
+    ACCESS_TOKEN_EXPIRES_IN: env.ACCESS_TOKEN_EXPIRES_IN,
+    REFRESH_TOKEN_EXPIRES_IN: env.REFRESH_TOKEN_EXPIRES_IN,
+    BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN: env.BETTER_AUTH_SESSION_TOKEN_EXPIRES_IN,
+    BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE: env.BETTER_AUTH_SESSION_TOKEN_UPDATE_AGE,
     Email_Sender: {
-      EMAIL_SENDER_USER_PASS: process.env.EMAIL_SENDER_USER_PASS,
-      EMAIL_SENDER_USER_USER: process.env.EMAIL_SENDER_USER_USER,
-      EMAIL_SENDER_USER_SMTP_HOST: process.env.EMAIL_SENDER_USER_SMTP_HOST,
-      EMAIL_SENDER_USER_SMTP_PORT: process.env.EMAIL_SENDER_USER_SMTP_PORT,
-      EMAIL_SENDER_USER_SMTP_FROM: process.env.EMAIL_SENDER_USER_SMTP_FROM,
+      EMAIL_SENDER_USER_PASS: env.EMAIL_SENDER_USER_PASS,
+      EMAIL_SENDER_USER_USER: env.EMAIL_SENDER_USER_USER,
+      EMAIL_SENDER_USER_SMTP_HOST: env.EMAIL_SENDER_USER_SMTP_HOST,
+      EMAIL_SENDER_USER_SMTP_PORT: env.EMAIL_SENDER_USER_SMTP_PORT,
+      EMAIL_SENDER_USER_SMTP_FROM: env.EMAIL_SENDER_USER_SMTP_FROM,
     },
-    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-    GOOGLE_SECRET_KEY: process.env.GOOGLE_SECRET_KEY,
-    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
-    FRONTEND_URL: process.env.FRONTEND_URL,
+    GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+    GOOGLE_SECRET_KEY: env.GOOGLE_SECRET_KEY,
     CLOUDINARY: {
-      CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
-      CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
-      CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
+      CLOUDINARY_CLOUD_NAME: env.CLOUDINARY_CLOUD_NAME,
+      CLOUDINARY_API_KEY: env.CLOUDINARY_API_KEY,
+      CLOUDINARY_API_SECRET: env.CLOUDINARY_API_SECRET,
     },
     STRIPE: {
-      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
-      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+      STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
+      STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
     },
-    SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL,
-    SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD,
-    SUPER_ADMIN_NAME: process.env.SUPER_ADMIN_NAME,
-  } as EnvConfig;
+    SUPER_ADMIN_EMAIL: env.SUPER_ADMIN_EMAIL,
+    SUPER_ADMIN_PASSWORD: env.SUPER_ADMIN_PASSWORD,
+    SUPER_ADMIN_NAME: env.SUPER_ADMIN_NAME,
+  };
 };
+
 export const envVars = loadEnvVariables();

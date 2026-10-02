@@ -18,7 +18,8 @@ router.patch(
       name: "profilePhoto",
       maxCount: 1,
     },
-    { name: "medicalReports", maxCount: 5 },
+    // photo + 4 reports = the 5-file limit per request
+    { name: "medicalReports", maxCount: 4 },
   ]),
   updatePatientProfileMiddleware,
   validateRequest(PatientValidation.updatePatientProfileZodSchema),

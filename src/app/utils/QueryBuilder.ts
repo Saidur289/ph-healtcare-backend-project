@@ -138,9 +138,9 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
                     // where = { user: {} }
                     const countRelation = countQueryWhere[relation] as Record<string, unknown>;
                     // where= {user: {}}
-                    queryRelation[nestedField] = this.parseFilterValue(value);
+                    queryRelation[nestedField] = this.parseFilterValue(value, nestedField);
                     //where = {user: {name: 'John'}}
-                    countRelation[nestedField] = this.parseFilterValue(value);
+                    countRelation[nestedField] = this.parseFilterValue(value, nestedField);
                     //where = {user: {name: 'John'}}
                     return;
                 }
@@ -187,9 +187,9 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
                     //where:{ specialties: { some: { specialty: {} } } }
                     const countNestedRelation = countSome[nestedRelation] as Record<string, unknown>;
 
-                    queryNestedRelation[nestedField] = this.parseFilterValue(value);
+                    queryNestedRelation[nestedField] = this.parseFilterValue(value, nestedField);
                     //where:{specialties:{some:{specialty:{title: 'abc'}}}}
-                    countNestedRelation[nestedField] = this.parseFilterValue(value);
+                    countNestedRelation[nestedField] = this.parseFilterValue(value, nestedField);
 
                     return;
                 }
@@ -208,8 +208,8 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
             }
 
             //direct value parsing
-            queryWhere[key] = this.parseFilterValue(value);
-            countQueryWhere[key] = this.parseFilterValue(value);
+            queryWhere[key] = this.parseFilterValue(value, key);
+            countQueryWhere[key] = this.parseFilterValue(value, key);
         })
         return this;
     }
@@ -231,7 +231,13 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
         // Default = createdAt
         const { sortableFields } = this.config;
         const requestedSortBy = this.queryParams.sortBy || "createdAt";
-        const sortBy = sortableFields && !sortableFields.includes(requestedSortBy) ? "createdAt" : requestedSortBy;
+        const allowedSort = sortableFields ?? [
+            "createdAt",
+            "updatedAt",
+            ...(this.config.filterableFields ?? []),
+            ...(this.config.searchableFields ?? []),
+        ];
+        const sortBy = allowedSort.includes(requestedSortBy) ? requestedSortBy : "createdAt";
 
         // Get sorting direction
         // If sortOrder = asc → ascending
@@ -315,7 +321,9 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
     }
     fields(): this {
         // Get the "fields" query parameter from request
-        const fieldsParam = this.queryParams.fields;
+        // ignored unless the list allows it (prevents selecting unexpected columns / relations)
+        const allowedFields = this.config.selectableFields;
+        const fieldsParam = allowedFields ? this.queryParams.fields : undefined;
 
         // Example:
         // /doctors?fields=user.name,user.email
@@ -338,7 +346,8 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
             // ["user.name", "user.email"]
             const fieldsArray = fieldsParam
                 .split(",")
-                .map(field => field.trim());
+                .map(field => field.trim())
+                .filter(field => allowedFields!.includes(field));
 
             // Initialize selectFields object
 
@@ -550,7 +559,18 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
         // Return final merged object
         return result;
     }
-    private parseFilterValue(value: unknown): unknown {
+    // text columns whose values can look like numbers ("01712345678") or booleans
+    private isTextField(field: string): boolean {
+        const name = field.split(".").pop() ?? field;
+        return Boolean(this.config.stringFields?.includes(name)) || /(number|id|email|name|title|phone|code|address)$/i.test(name);
+    }
+    private parseFilterValue(value: unknown, field = ""): unknown {
+        if (Array.isArray(value)) {
+            return { in: value.map((item) => this.parseFilterValue(item, field)) }
+        }
+        if (field && this.isTextField(field)) {
+            return typeof value === "string" ? value : String(value)
+        }
         if (value === "true") {
             return true
         }

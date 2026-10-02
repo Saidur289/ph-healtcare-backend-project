@@ -34,21 +34,18 @@ export const uploadFileToCloudinary = async (buffer: Buffer, fileName: string): 
         ).end(buffer)
     })
 }
+// accepts a stored Cloudinary URL; the resource type (image / raw / video) is read from it
 export const deleteFileFromCloudinary = async (url: string) => {
+    const match = url.match(/\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+?)(\.[a-zA-Z0-9]+)?$/);
+    if (!match) return;
+    const [, resourceType, path, extension] = match;
+    // raw files keep their extension in the public id
+    const publicId = resourceType === "raw" && extension ? path + extension : path;
     try {
-        const regex = /\/v\d+\/(.+?)(?:\.[a-zA-Z0-9]+)+$/;
-        const match = url.match(regex);
-        if (match && match[1]) {
-            const publicId = match[1];
-            await cloudinary.uploader.destroy(publicId, {
-                resource_type: "image",
-            });
-            console.log(`File ${publicId} deleted from cloudinary`);
-        }
+        await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
     } catch (error) {
-        console.error("Error deleting file from Cloudinary:", error);
+        console.error("Error deleting file from Cloudinary:", (error as Error)?.message);
         throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Error deleting file from Cloudinary");
     }
-
 }
 export const cloudinaryUpload = cloudinary

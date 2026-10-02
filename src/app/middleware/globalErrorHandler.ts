@@ -12,6 +12,7 @@ import { APIError } from "better-auth/api";
 
 import { deleteUploadedFilesFromGlobalErrorHandler } from "../utils/deletedUploadedFilesFromGlobalErrorHandler";
 import { Prisma } from "../../generated/prisma/client";
+import { logger } from "../lib/logger";
 import {
   handlePrismaClientInitializationError,
   handlePrismaClientKnownRequestError,
@@ -27,25 +28,10 @@ const globalErrorHandler = async (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction,
 ) => {
-  if (envVars.NODE_ENV === "development") {
-    console.error("Error: ", err);
-  }
   let errorSources: TErrorSources[] = [];
   let statusCode: number = StatusCodes.INTERNAL_SERVER_ERROR;
   let message: string = "internal server error";
   let stack: string | undefined = undefined;
-  //delete file from cloudinary for each file when error happen in prisma and not save in database
-  // if (req.file) {
-  //   await deleteFileFromCloudinary(req.file.path);
-  // }
-  // // delete multiple file from cloudinary
-  // if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-  //   const imageUrls = req.files.map((file: any) => file.path);
-  //   await Promise.all(
-  //     imageUrls.map((imageUrl: string) => deleteFileFromCloudinary(imageUrl)),
-  //   );
-  // }
-  // // delete file from cloudinary for each file when error happen in express
   await deleteUploadedFilesFromGlobalErrorHandler(req);
   if (err instanceof z.ZodError) {
     const simplifiedError = handleZodError(err);
@@ -89,6 +75,12 @@ const globalErrorHandler = async (
     message = err.body?.message || err.message || "Authentication error";
     stack = err.stack;
     errorSources = [{ path: err.body?.code ?? "", message }];
+  } else if (err?.type === "entity.too.large" || err?.type === "entity.parse.failed") {
+    // express.json(): body over 100 kb, or not valid JSON
+    statusCode = err.type === "entity.too.large" ? StatusCodes.REQUEST_TOO_LONG : StatusCodes.BAD_REQUEST;
+    message = err.type === "entity.too.large" ? "The request is too large" : "The request body is not valid JSON";
+    stack = err.stack;
+    errorSources = [{ path: "body", message }];
   } else if (err instanceof multer.MulterError) {
     // upload limits from config/multer.config.ts
     statusCode = err.code === "LIMIT_FILE_SIZE" ? StatusCodes.REQUEST_TOO_LONG : StatusCodes.BAD_REQUEST;
@@ -123,10 +115,9 @@ const globalErrorHandler = async (
       },
     ];
   }
-  // log unexpected (5xx) errors on the server even in production; the client only gets a safe message
-  if (statusCode >= 500 && envVars.NODE_ENV !== "development") {
-    console.error("Unhandled error:", err);
-  }
+  // 5xx: log the full error with the request id (pino redacts secrets / personal fields).
+  // 4xx are expected (validation, auth, not found); the request logger already records them.
+  if (statusCode >= 500) ((req as Request & { log?: typeof logger }).log ?? logger).error({ err, statusCode }, "request failed");
   const errorResponse: TErrorResponse = {
     success: false,
     message: message,

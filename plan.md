@@ -819,50 +819,68 @@ What the design looks like:
 **Goal:** a defense-in-depth setup that follows the OWASP Top 10.
 
 ### Server
-- [ ] **9.1 [S]** Add `helmet()` with sensible defaults.
-- [ ] **9.2 [S]** Add rate limiting with `express-rate-limit`, using a Redis store when there is more than one instance:
+- [x] **9.1 [S]** Add `helmet()` with sensible defaults.
+  - _Done: helmet with a strict API CSP (default-src none, frame-ancestors none), HSTS in production, x-powered-by off._
+- [x] **9.2 [S]** Add rate limiting with `express-rate-limit`, using a Redis store when there is more than one instance:
   - login, register and OTP endpoints: 5 requests per minute per IP and per email;
   - forgot/reset password: 3 requests per 15 minutes;
   - the general API: 100 requests per minute per user;
   - booking: 10 requests per minute per user.
-- [ ] **9.3 [S]** Put the better-auth handler (`/api/auth/*`) **before** `express.json()`, as its docs require (`server/src/app.ts:47`). Make the `/api/v1/auth/*` wrappers go through rate limiting.
-- [ ] **9.4 [S]** Configure CORS with an **exact allowlist** from env (`FRONTEND_URL` only in production) and `credentials: true`. Never use `*`.
-- [ ] **9.5 [S]** Protect against CSRF:
+  - _Done (in-memory store, one instance): auth 5/min per email + 100/min per IP, forgot/reset 3/15 min per email, API 100/min per session (1000 shared for anonymous traffic, which all comes from the Next.js server IP), booking 10/min per session. TRUST_PROXY sets proxy hops. Add a Redis store before running more than one instance. Proven by a script (6th login, 4th reset, 11th booking -> 429)._
+- [x] **9.3 [S]** Put the better-auth handler (`/api/auth/*`) **before** `express.json()`, as its docs require (`server/src/app.ts:47`). Make the `/api/v1/auth/*` wrappers go through rate limiting.
+  - _Done: better-auth stays before express.json(); the /api/v1/auth wrappers now have the limits above._
+- [x] **9.4 [S]** Configure CORS with an **exact allowlist** from env (`FRONTEND_URL` only in production) and `credentials: true`. Never use `*`.
+  - _Done: exact origin allowlist (FRONTEND_URL; localhost dev origins only outside production), credentials, X-Request-Id exposed._
+- [x] **9.5 [S]** Protect against CSRF:
   - use `SameSite=Lax` cookies;
   - remove `express.urlencoded` if nothing needs it;
   - check that the `Origin` or `Referer` header matches the allowlist on every state-changing request.
-- [ ] **9.6 [S]** Limit request size to `express.json({ limit: "100kb" })`.
-- [ ] **9.7 [S]** File uploads:
+  - _Done: SameSite=Lax cookies (already), express.urlencoded removed, Origin/Referer check on every POST/PUT/PATCH/DELETE (foreign origin -> 403; tested)._
+- [x] **9.6 [S]** Limit request size to `express.json({ limit: "100kb" })`.
+  - _Done: 100 kb JSON limit; over-limit -> 413 and bad JSON -> 400 (were 500)._
+- [x] **9.7 [S]** File uploads:
   - allowlist MIME types (jpg, png, webp, pdf) **and check the file's magic bytes**;
   - a maximum of 5 MB per file and 5 files;
   - random file names;
   - clean up on every upload type, including `fields()` and arrays (`deletedUploadedFilesFromGlobalErrorHandler.ts:11,18`).
-- [ ] **9.8 [S]** Validate env vars at startup with a zod schema that includes `DATABASE_URL`. Remove unused keys:
+  - _Done: files held in memory, MIME + extension + magic-byte check (JPG/PNG/WEBP/PDF), 5 MB, 5 files, random UUID names, nothing stored on rejection; fake PNG and SVG-as-PNG rejected in tests; Cloudinary delete now handles every resource type._
+- [x] **9.8 [S]** Validate env vars at startup with a zod schema that includes `DATABASE_URL`. Remove unused keys:
   - `JWT_SECRET_KEY`, `JWT_EXPIRES_IN`
   - `BETTER_AUTH_SESSION_TOKEN_*`
   - `GOOGLE_CALLBACK_URL`
   - the duplicate `BETTER_AUTH_URL`
+  - _Done: zod schema for all env vars incl. DATABASE_URL, URLs, durations, Stripe key format; JWT_SECRET_KEY, JWT_EXPIRES_IN and GOOGLE_CALLBACK_URL no longer required (BETTER_AUTH_SESSION_TOKEN_* are still used). The duplicate BETTER_AUTH_URL line in .env should be deleted by hand._
 - [ ] **9.9 [S]** Secrets:
   - at least 32 random bytes each;
   - different secrets for access tokens, refresh tokens and better-auth;
   - different values per environment;
   - kept in the hosting provider's secret store, not in a `.env` file in production.
-- [ ] **9.10 [S]** Error responses: one consistent shape `{ success, message, errorSources }`, with no stack traces or DB details in production.
-- [ ] **9.11 [S]** Use a structured logger (`pino`) with a request id and **redaction** of these fields: `password`, `token`, `cookie`, `authorization`, `otp`, `email`, `contactNumber`.
-- [ ] **9.12 [S]** Parse query params safely: `QueryBuilder` must not turn numeric strings into numbers for string fields such as `contactNumber`. Allowlist `sortBy`, `fields` and `include` per model.
-- [ ] **9.13 [S]** Run `npm audit` and fix high and critical issues. Turn on Dependabot or Renovate. Move `express` and `@types/*` to the correct dependency groups.
+  - _Partly: production refuses to start with secrets under 32 characters or reused ones. Still to do by you: ACCESS_TOKEN_SECRET (29) and REFRESH_TOKEN_SECRET (30) are short; replace them (same ACCESS_TOKEN_SECRET in client/.env) and use the host's secret store in production._
+- [x] **9.10 [S]** Error responses: one consistent shape `{ success, message, errorSources }`, with no stack traces or DB details in production.
+  - _Done: every error is { success, message, errorSources }, including 404, 429, CSRF and better-auth blocks; no stack or DB details outside development; the 404 no longer echoes the URL._
+- [x] **9.11 [S]** Use a structured logger (`pino`) with a request id and **redaction** of these fields: `password`, `token`, `cookie`, `authorization`, `otp`, `email`, `contactNumber`.
+  - _Done: pino + pino-http, request id (X-Request-Id), redaction of cookie, authorization, password, token, otp, email, contactNumber; request logs keep only method, path and status; server.ts and cron use the logger._
+- [x] **9.12 [S]** Parse query params safely: `QueryBuilder` must not turn numeric strings into numbers for string fields such as `contactNumber`. Allowlist `sortBy`, `fields` and `include` per model.
+  - _Done: text columns (names ending in Number, Id, email, name, phone...) are never parsed as numbers/booleans; sortBy only from the list's fields; ?fields= ignored unless a list sets selectableFields._
+- [x] **9.13 [S]** Run `npm audit` and fix high and critical issues. Turn on Dependabot or Renovate. Move `express` and `@types/*` to the correct dependency groups.
+  - _Done: npm audit fix, cloudinary 2 and nodemailer 10, express moved to dependencies and @types to devDependencies, Dependabot config. Left: 4 high findings inside the Prisma CLI (deepmerge-ts, mysql2); the only fix is a downgrade to Prisma 6, and it is build-time tooling the running API does not call._
 
 ### Client
-- [ ] **9.14 [C]** Set security headers in `next.config.ts`:
+- [x] **9.14 [C]** Set security headers in `next.config.ts`:
   - a `Content-Security-Policy` that allows your API, Stripe, Cloudinary and the video provider;
   - `X-Frame-Options: DENY` (except the video page if the provider needs it);
   - `Referrer-Policy: strict-origin-when-cross-origin`;
   - `Permissions-Policy` allowing camera and microphone only on the call page;
   - `Strict-Transport-Security`.
-- [ ] **9.15 [C]** Never render user HTML with `dangerouslySetInnerHTML`. Escape review and prescription text.
-- [ ] **9.16 [C]** URL-encode every dynamic value in URLs (`encodeURIComponent`), for example emails in redirect URLs (`login/_action.ts:36,61`).
-- [ ] **9.17 [C]** Only `NEXT_PUBLIC_API_BASE_URL` may be public. Keep `ACCESS_TOKEN_SECRET` server-only, and consider removing it from the client entirely by trusting `/auth/me` instead.
-- [ ] **9.18 [C]** Move `@types/jsonwebtoken` to devDependencies, run `npm audit` and turn on Dependabot.
+  - _Done: per-request CSP with nonce + strict-dynamic in proxy.ts (Cloudinary images, Daily.co frames), X-Frame-Options DENY, Referrer-Policy, Permissions-Policy (camera / mic only on the call page, delegated to Daily), HSTS in production; theme and query-hydration scripts get the nonce; checked in dev and production builds with no violations._
+- [x] **9.15 [C]** Never render user HTML with `dangerouslySetInnerHTML`. Escape review and prescription text.
+  - _Done: no dangerouslySetInnerHTML anywhere; reviews and prescriptions render as text._
+- [x] **9.16 [C]** URL-encode every dynamic value in URLs (`encodeURIComponent`), for example emails in redirect URLs (`login/_action.ts:36,61`).
+  - _Done: all dynamic URL values encoded (emails already were; ids now too)._
+- [x] **9.17 [C]** Only `NEXT_PUBLIC_API_BASE_URL` may be public. Keep `ACCESS_TOKEN_SECRET` server-only, and consider removing it from the client entirely by trusting `/auth/me` instead.
+  - _Done: only NEXT_PUBLIC_API_BASE_URL is public; ACCESS_TOKEN_SECRET is read only in proxy.ts (server-side)._
+- [x] **9.18 [C]** Move `@types/jsonwebtoken` to devDependencies, run `npm audit` and turn on Dependabot.
+  - _Done: @types and devtools moved to devDependencies, Next.js 16.3.8 (critical fix), 0 vulnerabilities, Dependabot config._
 
 **Phase done when:** an OWASP ZAP baseline scan (or similar) against staging shows no High findings, and the rate limits are proven by a test.
 

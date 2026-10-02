@@ -5,6 +5,8 @@ import { StatusCodes } from "http-status-codes";
 export const notFound = (req: Request, res: Response, next: NextFunction) => {
   res.status(StatusCodes.NOT_FOUND).json({
     success: false,
-    message: `Route ${req.originalUrl} not found`,
+    // the URL is not echoed back (it is user input)
+    message: "Route not found",
+    errorSources: [{ path: req.path.slice(0, 200), message: "Route not found" }],
   });
 };

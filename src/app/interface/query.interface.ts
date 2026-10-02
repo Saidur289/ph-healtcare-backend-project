@@ -47,6 +47,11 @@ export interface IQueryConfig {
     // first-level relations that are a single record (e.g. payment.appointment): 3-part search
     // paths through them use a plain nested filter instead of "some" (which is for lists)
     singleRelations?: string[];
+    // extra text columns that must never be parsed as numbers/booleans (names ending in
+    // Number, Id, email, name, title, phone, code, address are text automatically)
+    stringFields?: string[];
+    // columns the client may pick with ?fields= (not set = ?fields= is ignored)
+    selectableFields?: string[];
 }
 export interface PrismaStringFilter {
     contains?: string;
