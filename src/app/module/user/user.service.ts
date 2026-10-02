@@ -111,7 +111,7 @@ const createDoctor = async (payload: ICreateDoctorPayload) => {
         return doctor
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-        console.log("Error occurred while creating doctor");
+        console.error("Error occurred while creating doctor");
         await prisma.user.delete({
             where: {
                 id: userData.user.id
@@ -160,7 +160,7 @@ const createAdmin = async (payload: ICreateAdmin) => {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-        console.log("Error occurred while creating admin");
+        console.error("Error occurred while creating admin");
         await prisma.user.delete({
             where: {
                 id: userData.user.id

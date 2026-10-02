@@ -730,8 +730,8 @@ What the design looks like:
   - _Done: card with title + View All, muted header row, row action buttons + ⋮ menu, UserInfoCell (avatar, gender, age), StatusPill badges; fixed the empty-row colSpan._
 - [x] **8.D5 [C]** Doctor dashboard home = the shot itself: greeting, 3 stat cards (appointments today, total patients, today's earnings), then upcoming appointments with **Check In** (in-person) or **Join Now** (video) buttons.
   - _Done: greeting + date, Appointments Today / Total Patients / Today's Earnings with vs-yesterday trends (stats API now returns today/yesterday numbers in APP_TIMEZONE, default Asia/Dhaka, queries in parallel), Upcoming Appointments with Join Now, rating and status cards. There is no in-person visit type in this app, so there is no Check In button._
-- [ ] **8.D6 [C]** Apply the same look to the patient and admin dashboards and the auth pages, so the whole app feels like one product.
-  - _In progress: patient and admin homes, auth pages (navy brand panel + form) and public pages done. Dashboard list pages still need the restyle._
+- [x] **8.D6 [C]** Apply the same look to the patient and admin dashboards and the auth pages, so the whole app feels like one product.
+  - _Done: patient, doctor and admin pages, auth pages (navy brand panel + form), public site, older admin lists (headers, BDT fees, token colours) all use the design._
 
 ### Public
 - [x] **8.1 [C]** Home page: hero, search by specialty or doctor, featured doctors, how-it-works section and footer. Replace "Hello World".
@@ -786,24 +786,29 @@ What the design looks like:
   - _Done: admin home uses all dashboardData (4 stat cards, bar and pie charts in the design palette)._
 
 ### Quality for every page
-- [ ] **8.22 [C]** Every data page has a loading skeleton, an empty state, an error state with a retry button, and toast messages for mutations.
-  - _Started: shared DashboardSkeleton on every dashboard loading.tsx, plus ErrorState (retry) and EmptyState components._
-- [ ] **8.23 [C]** Every form:
+- [x] **8.22 [C]** Every data page has a loading skeleton, an empty state, an error state with a retry button, and toast messages for mutations.
+  - _Done: skeletons on every dashboard loading.tsx, ErrorState (retry) / EmptyState across pages, dashboard-level error.tsx that keeps the shell, restyled root error / 404 / loading, toasts on all mutations._
+- [x] **8.23 [C]** Every form:
   - uses the **same zod schema rules** as the server;
   - disables the submit button while sending;
   - shows field errors.
-- [ ] **8.24 [C]** After every mutation, invalidate the related TanStack Query keys so lists refresh.
+  - _Done: forms use the server rules (shared password schema, doctor designation 5+ and fee 50 to 1,000,000 whole taka, profile / health / admin / specialty / review / prescription schemas mirror the API); submit disabled while sending; field errors shown._
+- [x] **8.24 [C]** After every mutation, invalidate the related TanStack Query keys so lists refresh.
+  - _Done: mutations invalidate their own and related keys (doctor changes refresh doctor-specialties, doctor-schedules and dashboard numbers; schedule changes refresh slot pickers; appointment changes refresh the bell)._
 - [x] **8.25 [C]** Fix `UserDropdown` markup (items inside the separator, `Link` without `asChild`) and use stable React `key`s instead of the array index.
   - _Done: UserDropdown rebuilt (grouped items, Link via asChild, shared useLogout); nav keys use href/title._
-- [ ] **8.26 [C]** Make it responsive: test every page at 375 px (phone), 768 px (tablet) and desktop.
-- [ ] **8.27 [C]** Accessibility:
+- [x] **8.26 [C]** Make it responsive: test every page at 375 px (phone), 768 px (tablet) and desktop.
+  - _Done: scripted check of every page for horizontal overflow at 375 px (all roles) and 768 px; fixed grid overflow on narrow screens; the mobile drawer replaces the sidebar below md._
+- [x] **8.27 [C]** Accessibility:
   - labels on all inputs;
   - keyboard navigation in dialogs;
   - colour contrast of at least 4.5:1;
   - `alt` text on images.
+  - _Done: scripted check for unlabeled inputs, unnamed buttons/links and images without alt (fixed the table search box and its clear button); dialogs trap focus, close on Escape and return focus; colour tokens tuned so every text/background pair is at least 4.5:1 in light and dark._
 - [x] **8.28 [C]** Import only the lucide icons you use in `iconMapper.ts`, instead of `import * as Icons`, to cut bundle size.
   - _Done: explicit icon map in iconMapper.ts._
-- [ ] **8.29 [C]** Remove all `console.log` calls (about 40) and add an ESLint `no-console` rule.
+- [x] **8.29 [C]** Remove all `console.log` calls (about 40) and add an ESLint `no-console` rule.
+  - _Done: no console.log left; ESLint no-console (error/warn allowed); the API wrappers no longer log whole axios errors (they include session cookies), httpClient logs method, path and status only._
 
 **Phase done when:** every link in every role's sidebar opens a working page, and a full click-through shows no placeholder text.
 

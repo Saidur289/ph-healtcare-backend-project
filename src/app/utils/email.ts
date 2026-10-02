@@ -47,7 +47,7 @@ export const sendEmail = async ({ subject, templateData, templateName, to, attac
         console.log(`Email sent: ${info.messageId}`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-        console.log("Email sending error", error.message);
+        console.error("Email sending error", error.message);
         throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to send email")
 
     }

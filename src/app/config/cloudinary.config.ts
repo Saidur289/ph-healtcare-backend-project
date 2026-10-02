@@ -37,7 +37,6 @@ export const uploadFileToCloudinary = async (buffer: Buffer, fileName: string): 
 export const deleteFileFromCloudinary = async (url: string) => {
     try {
         const regex = /\/v\d+\/(.+?)(?:\.[a-zA-Z0-9]+)+$/;
-        console.log("url: ", url);
         const match = url.match(regex);
         if (match && match[1]) {
             const publicId = match[1];
