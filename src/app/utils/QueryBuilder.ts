@@ -55,14 +55,9 @@ export class QueryBuilder<T, TWhereInput = Record<string, unknown>, TInclude = R
                             mode: "insensitive" as const,
                         }
 
+                        const inner = { [nestedRelation]: { [nestedField]: stringFilter } };
                         return {
-                            [relation]: {
-                                some: {
-                                    [nestedRelation]: {
-                                        [nestedField]: stringFilter
-                                    }
-                                }
-                            }
+                            [relation]: this.config.singleRelations?.includes(relation) ? inner : { some: inner }
                         }
                     }
 

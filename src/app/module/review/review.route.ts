@@ -23,6 +23,12 @@ router.get(
   ReviewController.getAllReview,
 );
 router.patch(
+  "/:id/visibility",
+  checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+  validateRequest(ReviewValidation.ReviewVisibilityZodSchema),
+  ReviewController.setReviewVisibility,
+);
+router.patch(
   "/update-review/:id",
   checkAuth(Role.PATIENT),
   validateRequest(ReviewValidation.UpdateReviewZodSchema),

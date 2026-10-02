@@ -1,7 +1,7 @@
 import { Prisma } from "../../../generated/prisma/client";
 
 // DoctorSchedules has a composite key (doctorId + scheduleId) and no "id" column
-export const doctorScheduleSearchableFields = ["scheduleId", "doctorId"];
+export const doctorScheduleSearchableFields = ["scheduleId", "doctorId", "doctor.name"];
 export const doctorScheduleFilterableFields = [
   "scheduleId",
   "doctorId",

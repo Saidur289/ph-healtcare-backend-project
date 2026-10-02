@@ -2,6 +2,10 @@ model Review {
   id        String   @id @default(uuid())
   rating    Float    @default(0.0)
   comment   String?  @db.Text
+  // admin moderation: hidden reviews are not public and do not count in the rating
+  isHidden     Boolean   @default(false)
+  hiddenReason String?   @db.VarChar(300)
+  hiddenAt     DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -17,5 +21,6 @@ model Review {
   @@index([appointmentId])
   @@index([patientId])
   @@index([doctorId])
+  @@index([doctorId, isHidden])
   @@map("reviews")
 }

@@ -44,6 +44,9 @@ export interface IQueryConfig {
     sortableFields?: string[];
     // upper bound for ?limit= (default 100)
     maxLimit?: number;
+    // first-level relations that are a single record (e.g. payment.appointment): 3-part search
+    // paths through them use a plain nested filter instead of "some" (which is for lists)
+    singleRelations?: string[];
 }
 export interface PrismaStringFilter {
     contains?: string;

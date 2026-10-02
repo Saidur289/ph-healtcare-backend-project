@@ -1,10 +1,23 @@
 import z from "zod";
 
+const title = z
+    .string("Title is required")
+    .trim()
+    .min(2, "Title must be at least 2 characters long")
+    .max(60, "Title must be at most 60 characters");
+const description = z.string("Description must be text").trim().max(300, "Description must be at most 300 characters");
+
 const createSpecialtyZodSchema = z.strictObject({
-    title: z.string("Title is required").min(5, "Title must be at least 5 characters long").max(30, "Title must be less than 30 characters"),
-    description: z.string("Description is required").min(5, "Description must be at least 5 characters long").max(50, "Description must be less than 50 characters").optional()
+    title,
+    description: description.optional(),
+})
+
+const updateSpecialtyZodSchema = z.strictObject({
+    title: title.optional(),
+    description: description.optional(),
 })
 
 export const SpecialtyValidation = {
-    createSpecialtyZodSchema
+    createSpecialtyZodSchema,
+    updateSpecialtyZodSchema,
 }

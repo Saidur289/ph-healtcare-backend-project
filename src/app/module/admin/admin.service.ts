@@ -22,8 +22,12 @@ const getAllAdmin = async () => {
       name: true,
       email: true,
       profilePhoto: true,
+      contactNumber: true,
+      createdAt: true,
+      // user id is needed for status / role changes
       user: {
         select: {
+          id: true,
           role: true,
           status: true,
         },

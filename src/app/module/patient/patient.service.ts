@@ -8,6 +8,9 @@ import {
   IUpdatePatientProfilePayload,
 } from "./patient.interface";
 import { convertDate } from "./patient.utils";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { IQueryParams } from "../../interface/query.interface";
+import { Patient, Prisma } from "../../../generated/prisma/client";
 
 const updateProfile = async (
   user: IRequestUser,
@@ -111,6 +114,27 @@ const updateProfile = async (
   });
   return result;
 };
+// ADMIN: patients with account status. Health data and reports are NOT included
+// (medical data is only for the patient and their doctors).
+const getAllPatients = async (query: IQueryParams) => {
+  const queryBuilder = new QueryBuilder<Patient, Prisma.PatientWhereInput, Prisma.PatientInclude>(prisma.patient, query, {
+    searchableFields: ["name", "email", "contactNumber"],
+    filterableFields: ["user.status", "isDeleted", "createdAt"],
+  });
+  return queryBuilder
+    .search()
+    .filter()
+    .include({
+      user: { select: { id: true, status: true, emailVerified: true, createdAt: true } },
+      _count: { select: { appointments: true, reviews: true } },
+    })
+    .sort()
+    .paginate()
+    .fields()
+    .where({ isDeleted: false })
+    .execute();
+};
 export const PatientService = {
+  getAllPatients,
   updateProfile,
 };

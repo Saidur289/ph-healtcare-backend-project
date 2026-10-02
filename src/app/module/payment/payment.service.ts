@@ -1,5 +1,7 @@
 import Stripe from "stripe";
-import { Prisma } from "../../../generated/prisma/client";
+import { Payment, Prisma } from "../../../generated/prisma/client";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { IQueryParams } from "../../interface/query.interface";
 import {
   AppointmentStatus,
   CancelledBy,
@@ -356,7 +358,42 @@ const reconcilePayments = async () => {
   return { checked, problems };
 };
 
+// ADMIN: payments with the appointment, patient and doctor (no raw gateway data)
+const getAllPayments = async (query: IQueryParams) => {
+  const queryBuilder = new QueryBuilder<Payment, Prisma.PaymentWhereInput, Prisma.PaymentInclude>(prisma.payment, query, {
+    searchableFields: ["invoiceNumber", "appointment.patient.name", "appointment.patient.email", "appointment.doctor.name"],
+    filterableFields: ["status", "amount", "paidAt", "createdAt"],
+    singleRelations: ["appointment"],
+  });
+  // fixed allowlist: paymentGatewayData, checkout URLs and Stripe ids never reach the browser
+  return queryBuilder
+    .search()
+    .filter()
+    .select({
+      id: true,
+      amount: true,
+      status: true,
+      invoiceNumber: true,
+      invoiceUrl: true,
+      paidAt: true,
+      refundedAt: true,
+      createdAt: true,
+      appointment: {
+        select: {
+          id: true,
+          status: true,
+          patient: { select: { id: true, name: true, email: true } },
+          doctor: { select: { id: true, name: true } },
+          schedule: { select: { startDateTime: true, endDateTime: true } },
+        },
+      },
+    })
+    .sort()
+    .paginate()
+    .execute();
+};
 export const PaymentService = {
+  getAllPayments,
   handleStripeEventWebhook,
   generateAndSendInvoice,
   retryMissingInvoices,

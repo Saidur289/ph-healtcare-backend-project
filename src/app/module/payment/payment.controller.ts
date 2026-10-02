@@ -5,6 +5,8 @@ import { stripe } from "../../config/stripe.config";
 import { PaymentService } from "./payment.service";
 import { sendResponse } from "../../shared/sendResponse";
 import AppError from "../../errorHelpers/AppError";
+import { catchAsync } from "../../shared/catchAsync";
+import { IQueryParams } from "../../interface/query.interface";
 
 // POST /webhook (raw body, see app.ts). Stripe retries any non-2xx answer for up to 3 days, so:
 // - bad signature           -> 400 (not from Stripe)
@@ -44,6 +46,11 @@ const handleStripeEventWebhook = async (req: Request, res: Response) => {
   }
 };
 
+const getAllPayments = catchAsync(async (req: Request, res: Response) => {
+  const result = await PaymentService.getAllPayments(req.query as IQueryParams);
+  sendResponse(res, { httpStatusCode: 200, success: true, message: "Payments fetched", data: result.data, meta: result.meta });
+});
 export const PaymentController = {
+  getAllPayments,
   handleStripeEventWebhook,
 };

@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { IQueryParams } from "../../interface/query.interface";
 import { catchAsync } from "../../shared/catchAsync";
 import { PrescriptionService } from "./prescription.service";
 import { sendResponse } from "../../shared/sendResponse";
@@ -34,13 +35,13 @@ const myPrescriptions = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getAllPrescriptions = catchAsync(async (req: Request, res: Response) => {
-  // Implementation for getting all prescriptions
-  const prescription = await PrescriptionService.getAllPrescriptions();
+  const result = await PrescriptionService.getAllPrescriptions(req.query as IQueryParams);
   sendResponse(res, {
     httpStatusCode: StatusCodes.OK,
     success: true,
     message: "Prescriptions retrieved successfully",
-    data: prescription,
+    data: result.data,
+    meta: result.meta,
   });
 });
 const updatePrescription = catchAsync(async (req: Request, res: Response) => {

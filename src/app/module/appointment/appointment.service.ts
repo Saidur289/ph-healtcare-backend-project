@@ -11,7 +11,9 @@ import {
   Role,
   UserStatus,
 } from "../../../generated/prisma/enums";
-import { Prisma } from "../../../generated/prisma/client";
+import { Appointment, Prisma } from "../../../generated/prisma/client";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { IQueryParams } from "../../interface/query.interface";
 import { getPatientProfileOrThrow } from "../../utils/profile";
 import {
   ACTIVE_APPOINTMENT_STATUSES,
@@ -709,7 +711,32 @@ const cancelUnpaidAppointment = async () => {
   return cancelledCount;
 };
 
+// ADMIN: every appointment with patient, doctor, slot and payment
+const getAllAppointments = async (query: IQueryParams) => {
+  const queryBuilder = new QueryBuilder<Appointment, Prisma.AppointmentWhereInput, Prisma.AppointmentInclude>(
+    prisma.appointment,
+    query,
+    {
+      searchableFields: ["id", "patient.name", "patient.email", "doctor.name"],
+      filterableFields: ["status", "paymentStatus", "doctorId", "patientId", "schedule.startDateTime", "createdAt"],
+    },
+  );
+  return queryBuilder
+    .search()
+    .filter()
+    .include({
+      patient: { select: { id: true, name: true, email: true, profilePhoto: true } },
+      doctor: { select: { id: true, name: true, email: true, profilePhoto: true, appointmentFee: true } },
+      schedule: { select: { id: true, startDateTime: true, endDateTime: true } },
+      payment: { select: { id: true, amount: true, status: true, invoiceUrl: true, invoiceNumber: true, paidAt: true, refundedAt: true } },
+    })
+    .sort()
+    .paginate()
+    .fields()
+    .execute();
+};
 export const AppointmentService = {
+  getAllAppointments,
   cancelInTransaction,
   bookAppointment,
   getMyAppointments,

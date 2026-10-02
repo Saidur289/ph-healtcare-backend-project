@@ -768,13 +768,20 @@ What the design looks like:
   - _Done: My Reviews with average, star breakdown and list; prescription list (doctor and patient) with a medicine table, follow-up date, PDF button, empty and error states._
 
 ### Admin (`/admin/dashboard`)
-- [ ] **8.14 [C]** Patients management: list, view and block/unblock.
-- [ ] **8.15 [C]** Admins management (SUPER_ADMIN only): create, edit and delete admins, and change roles.
-- [ ] **8.16 [C]** Specialties management: create with an icon, edit and soft-delete.
-- [ ] **8.17 [C]** Doctor specialties and doctor schedules management pages.
-- [ ] **8.18 [C]** Appointments management: list, filter, view and cancel with refund.
-- [ ] **8.19 [C]** Payments management: list, filter, view invoices and refund.
-- [ ] **8.20 [C]** Prescriptions and reviews management: list, view and moderate (hide abusive reviews).
+- [x] **8.14 [C]** Patients management: list, view and block/unblock.
+  - _Done: GET /patients (admin; account status and counts, no medical data); list with search, status filter, sorting, pages; block / unblock with confirm (blocking signs the user out)._
+- [x] **8.15 [C]** Admins management (SUPER_ADMIN only): create, edit and delete admins, and change roles.
+  - _Done: super admins only (page checks the role, API too): list, create (must change password on first login), edit name/phone, change role, block / unblock, remove; your own row and super admins are protected._
+- [x] **8.16 [C]** Specialties management: create with an icon, edit and soft-delete.
+  - _Done: soft delete now (was a hard delete that also stripped the specialty from every doctor), PATCH /specialties/:id with icon upload, duplicate titles 409, re-creating a removed title restores it; card grid with create / edit / remove._
+- [x] **8.17 [C]** Doctor specialties and doctor schedules management pages.
+  - _Done: doctor specialties page (tick/untick per doctor), doctor schedules page (all doctors, open/booked filter, slot date range); admin schedule list no longer includes full doctor records._
+- [x] **8.18 [C]** Appointments management: list, filter, view and cancel with refund.
+  - _Done: GET /appointments (admin) with search, status, payment and slot-date filters; cancel with reason (refund for paid bookings); invoice link._
+- [x] **8.19 [C]** Payments management: list, filter, view invoices and refund.
+  - _Done: GET /payments (admin) with a fixed column allowlist (no gateway data / checkout links); status, amount and paid-date filters; invoice link; refund = cancel a paid booking that has not happened yet._
+- [x] **8.20 [C]** Prescriptions and reviews management: list, view and moderate (hide abusive reviews).
+  - _Done: review moderation (isHidden + reason; hidden reviews leave the public profile and the rating, recomputed in the same transaction); admin prescription list is metadata only (no medicines / PDF link)._
 - [x] **8.21 [C]** Use the unused `dashboardData` in the dashboard home charts (`admin/dashboard/page.tsx:20`).
   - _Done: admin home uses all dashboardData (4 stat cards, bar and pie charts in the design palette)._
 

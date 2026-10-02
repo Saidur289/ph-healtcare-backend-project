@@ -8,7 +8,6 @@ import { getDoctorProfileOrThrow } from "../../utils/profile";
 import { QueryBuilder } from "../../utils/QueryBuilder";
 import {
   doctorScheduleFilterableFields,
-  doctorScheduleIncludeConfig,
   doctorScheduleSearchableFields,
 } from "./doctorSchedule.constant";
 import {
@@ -99,7 +98,11 @@ const getAllDoctorSchedules = async (query: IQueryParams) => {
     .search()
     .filter()
     .paginate()
-    .dynamicInclude(doctorScheduleIncludeConfig)
+    // fixed include: the slot and a few doctor fields (not the doctor's user, appointments, ...)
+    .include({
+      schedule: true,
+      doctor: { select: { id: true, name: true, email: true, profilePhoto: true } },
+    })
     .sort()
     .fields()
     .execute();

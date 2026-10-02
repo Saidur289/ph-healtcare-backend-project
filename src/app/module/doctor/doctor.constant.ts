@@ -22,6 +22,8 @@ export const doctorPublicSelect = {
     isAvailable: true,
     createdAt: true,
     specialties: {
+        // soft-deleted specialties are hidden on public profiles
+        where: { specialty: { isDeleted: false } },
         select: {
             specialty: {
                 select: { id: true, title: true, icon: true }
@@ -49,6 +51,8 @@ export const getDoctorPublicDetailsSelect = () => ({
         }
     },
     reviews: {
+        // moderated (hidden) reviews never appear publicly
+        where: { isHidden: false },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {

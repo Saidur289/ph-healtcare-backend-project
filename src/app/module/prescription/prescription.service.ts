@@ -14,7 +14,9 @@ import {
 } from "./prescription.interface";
 import { getDoctorProfileOrThrow, getPatientProfileOrThrow } from "../../utils/profile";
 import { AppointmentStatus, Role } from "../../../generated/prisma/enums";
-import { Prisma } from "../../../generated/prisma/client";
+import { Prescription, Prisma } from "../../../generated/prisma/client";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { IQueryParams } from "../../interface/query.interface";
 import { TMedicine } from "./prescription.validation";
 
 // PRESCRIPTION_DELIVERY=off skips PDF upload + email (tests / CI)
@@ -225,12 +227,33 @@ const myPrescriptions = async (user: IRequestUser) => {
   });
 };
 
-const getAllPrescriptions = async () =>
-  prisma.prescription.findMany({
-    include: prescriptionInclude,
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+// ADMIN: paginated list with patient / doctor search (metadata only)
+const getAllPrescriptions = async (query: IQueryParams) => {
+  const queryBuilder = new QueryBuilder<Prescription, Prisma.PrescriptionWhereInput, Prisma.PrescriptionInclude>(
+    prisma.prescription,
+    query,
+    {
+      searchableFields: ["patient.name", "patient.email", "doctor.name"],
+      filterableFields: ["doctorId", "patientId", "createdAt", "followUpDate"],
+    },
+  );
+  // no medicines, instructions or PDF link: admins see who prescribed when, not the medical content
+  return queryBuilder
+    .search()
+    .filter()
+    .select({
+      id: true,
+      createdAt: true,
+      followUpDate: true,
+      emailSentAt: true,
+      patient: { select: { id: true, name: true, email: true } },
+      doctor: { select: { id: true, name: true, designation: true } },
+      appointment: { select: { id: true, status: true } },
+    })
+    .sort()
+    .paginate()
+    .execute();
+};
 
 export const PrescriptionService = {
   givePrescription,

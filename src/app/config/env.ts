@@ -1,3 +1,5 @@
+// load .env here, not only in lib/prisma.ts: whichever module imports env first must see the values
+import "dotenv/config";
 import { StatusCodes } from "http-status-codes";
 import AppError from "../errorHelpers/AppError";
 

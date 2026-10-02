@@ -31,7 +31,13 @@ const UpdateReviewZodSchema = z.strictObject({
   rating: ratingSchema.optional(),
   comment: commentSchema.optional(),
 });
+// admin moderation
+const ReviewVisibilityZodSchema = z.strictObject({
+  isHidden: z.boolean("isHidden must be true or false"),
+  reason: z.string().trim().min(3, "Reason must be at least 3 characters").max(300, "Reason must be at most 300 characters").optional(),
+});
 export const ReviewValidation = {
+  ReviewVisibilityZodSchema,
   CreateReviewZodSchema,
   UpdateReviewZodSchema,
 };

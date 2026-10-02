@@ -8,6 +8,8 @@ import { validateRequest } from "../../middleware/validateRequest";
 import { PatientValidation } from "./patient.validation";
 
 const router = Router();
+// ADMIN: patient list (account status, no medical data)
+router.get("/", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), PatientController.getAllPatients);
 router.patch(
   "/update-profile",
   checkAuth(Role.PATIENT),

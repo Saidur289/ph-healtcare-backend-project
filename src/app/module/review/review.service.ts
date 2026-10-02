@@ -9,6 +9,31 @@ import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { ICreateReviewPayload, IUpdateReviewPayload } from "./review.interface";
 import { getPatientProfileOrThrow } from "../../utils/profile";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { IQueryParams } from "../../interface/query.interface";
+import { Prisma, Review } from "../../../generated/prisma/client";
+
+type TTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+// average + count of VISIBLE reviews, written in the same transaction as every review
+// change (create / update / delete / hide), so the two never disagree
+const recomputeDoctorRating = async (tx: TTx, doctorId: string) => {
+  const stats = await tx.review.aggregate({
+    where: { doctorId, isHidden: false },
+    _avg: { rating: true },
+    _count: { _all: true },
+  });
+  await tx.doctor.update({
+    where: { id: doctorId },
+    // no reviews left -> average is null, store 0
+    data: { averageRating: stats._avg.rating ?? 0, reviewCount: stats._count._all },
+  });
+};
+
+const reviewListInclude = {
+  patient: { select: { id: true, name: true, email: true, profilePhoto: true } },
+  doctor: { select: { id: true, name: true, email: true, profilePhoto: true } },
+} as const;
 
 const createReview = async (
   user: IRequestUser,
@@ -55,38 +80,35 @@ const createReview = async (
         comment: payload.comment,
       },
     });
-    const averageRating = await tx.review.aggregate({
-      where: {
-        doctorId: reviewData.doctorId,
-      },
-      _avg: {
-        rating: true,
-      },
-      _count: { _all: true },
-    });
-    await tx.doctor.update({
-      where: {
-        id: reviewData.doctorId,
-      },
-      data: {
-        // no reviews left -> average is null, store 0
-        averageRating: averageRating._avg.rating ?? 0,
-        // same transaction as the review change, so count and average never disagree
-        reviewCount: averageRating._count._all,
-      },
-    });
+    await recomputeDoctorRating(tx, reviewData.doctorId);
     return reviewData;
   });
   return result;
 };
-const getAllReview = async () => {
-  const result = await prisma.review.findMany({
-    include: {
-      patient: true,
-      doctor: true,
-    },
+// ADMIN: paginated, searchable list (incl. hidden reviews)
+const getAllReview = async (query: IQueryParams) => {
+  const queryBuilder = new QueryBuilder<Review, Prisma.ReviewWhereInput, Prisma.ReviewInclude>(prisma.review, query, {
+    searchableFields: ["comment", "patient.name", "doctor.name"],
+    filterableFields: ["isHidden", "rating", "doctorId", "patientId", "createdAt"],
   });
-  return result;
+  return queryBuilder.search().filter().include(reviewListInclude).sort().paginate().fields().execute();
+};
+
+// ADMIN: hide an abusive review (or show it again); the doctor rating is recomputed
+const setReviewVisibility = async (reviewId: string, payload: { isHidden: boolean; reason?: string }) => {
+  return prisma.$transaction(async (tx) => {
+    const review = await tx.review.findUnique({ where: { id: reviewId }, select: { id: true, doctorId: true } });
+    if (!review) throw new AppError(StatusCodes.NOT_FOUND, "Review not found");
+    const updated = await tx.review.update({
+      where: { id: reviewId },
+      data: payload.isHidden
+        ? { isHidden: true, hiddenReason: payload.reason ?? null, hiddenAt: new Date() }
+        : { isHidden: false, hiddenReason: null, hiddenAt: null },
+      include: reviewListInclude,
+    });
+    await recomputeDoctorRating(tx, review.doctorId);
+    return updated;
+  });
 };
 const getMyReview = async (user: IRequestUser) => {
   const isUserExists = await prisma.user.findUnique({
@@ -107,10 +129,8 @@ const getMyReview = async (user: IRequestUser) => {
       where: {
         patientId: patientData.id,
       },
-      include: {
-        patient: true,
-        doctor: true,
-      },
+      orderBy: { createdAt: "desc" },
+      include: reviewListInclude,
     });
     return result;
   }
@@ -120,13 +140,13 @@ const getMyReview = async (user: IRequestUser) => {
       select: { id: true },
     });
     const result = await prisma.review.findMany({
+      // hidden (moderated) reviews are not shown to the doctor either
       where: {
         doctorId: doctorData.id,
+        isHidden: false,
       },
-      include: {
-        patient: true,
-        doctor: true,
-      },
+      orderBy: { createdAt: "desc" },
+      include: reviewListInclude,
     });
     return result;
   }
@@ -168,26 +188,7 @@ const updateReview = async (
         comment: payload.comment,
       },
     });
-    const averageRating = await tx.review.aggregate({
-      where: {
-        doctorId: reviewData.doctorId,
-      },
-      _avg: {
-        rating: true,
-      },
-      _count: { _all: true },
-    });
-    await tx.doctor.update({
-      where: {
-        id: reviewData.doctorId,
-      },
-      data: {
-        // no reviews left -> average is null, store 0
-        averageRating: averageRating._avg.rating ?? 0,
-        // same transaction as the review change, so count and average never disagree
-        reviewCount: averageRating._count._all,
-      },
-    });
+    await recomputeDoctorRating(tx, reviewData.doctorId);
     return reviewData;
   });
   return result;
@@ -221,26 +222,7 @@ const deleteReview = async (user: IRequestUser, reviewId: string) => {
         id: reviewId,
       },
     });
-    const averageRating = await tx.review.aggregate({
-      where: {
-        doctorId: deleteData.doctorId,
-      },
-      _avg: {
-        rating: true,
-      },
-      _count: { _all: true },
-    });
-    await tx.doctor.update({
-      where: {
-        id: deleteData.doctorId,
-      },
-      data: {
-        // no reviews left -> average is null, store 0
-        averageRating: averageRating._avg.rating ?? 0,
-        // same transaction as the review change, so count and average never disagree
-        reviewCount: averageRating._count._all,
-      },
-    });
+    await recomputeDoctorRating(tx, deleteData.doctorId);
     return deleteData;
   });
   return result;
@@ -248,6 +230,7 @@ const deleteReview = async (user: IRequestUser, reviewId: string) => {
 export const ReviewService = {
   createReview,
   getAllReview,
+  setReviewVisibility,
   getMyReview,
   updateReview,
   deleteReview,

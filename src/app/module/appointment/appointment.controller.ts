@@ -4,6 +4,7 @@ import { AppointmentService } from "./appointment.service";
 import { StatusCodes } from "http-status-codes";
 import { catchAsync } from "../../shared/catchAsync";
 import AppError from "../../errorHelpers/AppError";
+import { IQueryParams } from "../../interface/query.interface";
 
 // Optional "Idempotency-Key" header: the same key returns the same booking (double click / retry)
 const getIdempotencyKey = (req: Request) => {
@@ -123,7 +124,12 @@ const initiatePayment = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getAllAppointments = catchAsync(async (req: Request, res: Response) => {
+  const result = await AppointmentService.getAllAppointments(req.query as IQueryParams);
+  sendResponse(res, { httpStatusCode: 200, success: true, message: "Appointments fetched", data: result.data, meta: result.meta });
+});
 export const AppointmentController = {
+  getAllAppointments,
   bookAppointment,
   getMyAppointment,
   getMySingleAppointment,

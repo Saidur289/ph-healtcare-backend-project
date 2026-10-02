@@ -7,6 +7,12 @@ import { AppointmentValidation } from "./appointment.validation";
 
 const router = Router();
 
+// ADMIN: all appointments (registered before the "/:id/..." routes)
+router.get(
+  "/",
+  checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+  AppointmentController.getAllAppointments,
+);
 router.post(
   "/book-appointment",
   checkAuth(Role.PATIENT),

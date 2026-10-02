@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { catchAsync } from "../../shared/catchAsync";
 import { ReviewService } from "./review.service";
 import { sendResponse } from "../../shared/sendResponse";
+import { IQueryParams } from "../../interface/query.interface";
 
 const createReview = catchAsync(async (req: Request, res: Response) => {
   const payload = req.body;
@@ -15,12 +16,13 @@ const createReview = catchAsync(async (req: Request, res: Response) => {
   });
 });
 const getAllReview = catchAsync(async (req: Request, res: Response) => {
-  const result = await ReviewService.getAllReview();
+  const result = await ReviewService.getAllReview(req.query as IQueryParams);
   sendResponse(res, {
     httpStatusCode: 200,
     success: true,
     message: "Review fetched successfully",
-    data: result,
+    data: result.data,
+    meta: result.meta,
   });
 });
 const getMyReview = catchAsync(async (req: Request, res: Response) => {
@@ -60,7 +62,17 @@ const deleteReview = catchAsync(async (req: Request, res: Response) => {
     data: result,
   });
 });
+const setReviewVisibility = catchAsync(async (req: Request, res: Response) => {
+  const result = await ReviewService.setReviewVisibility(req.params.id as string, req.body);
+  sendResponse(res, {
+    httpStatusCode: 200,
+    success: true,
+    message: result.isHidden ? "Review hidden" : "Review is visible again",
+    data: result,
+  });
+});
 export const ReviewController = {
+  setReviewVisibility,
   createReview,
   getAllReview,
   getMyReview,
