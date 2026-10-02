@@ -760,9 +760,12 @@ What the design looks like:
 ### Doctor (`/doctor/dashboard`)
 - [x] **8.10 [C]** Dashboard home: today's appointments, earnings and rating.
   - _Done with 8.D5._
-- [ ] **8.11 [C]** Appointments: list with filters. Actions: start, complete, cancel, join call and write prescription.
-- [ ] **8.12 [C]** My schedules: calendar view, plus picking and removing slots (with the 2.19 fix).
-- [ ] **8.13 [C]** My reviews and prescriptions pages.
+- [x] **8.11 [C]** Appointments: list with filters. Actions: start, complete, cancel, join call and write prescription.
+  - _Done: Today / Upcoming / Past / Cancelled tabs, patient filter (also fed by the navbar search), Start/Rejoin call, Complete, Write prescription, Prescription PDF, No-show (15 min after start) and Cancel with a reason (refund for paid bookings)._
+- [x] **8.12 [C]** My schedules: calendar view, plus picking and removing slots (with the 2.19 fix).
+  - _Done: week calendar (Sunday start, prev/next/this week) loading one week via schedule.startDateTime[gte/lt]; open slots are green and removable, booked ones blue and locked; Calendar/List switch in ?view=; Book Schedule from both views._
+- [x] **8.13 [C]** My reviews and prescriptions pages.
+  - _Done: My Reviews with average, star breakdown and list; prescription list (doctor and patient) with a medicine table, follow-up date, PDF button, empty and error states._
 
 ### Admin (`/admin/dashboard`)
 - [ ] **8.14 [C]** Patients management: list, view and block/unblock.
