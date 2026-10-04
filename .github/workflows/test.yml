@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # src/generated is not committed
+      - run: npx prisma generate
+        env:
+          # prisma.config.ts validates the env; the test values are fake
+          DOTENV_CONFIG_PATH: tests/test.env
+      - run: npm run lint
+      - run: npm run test:types
+      # starts its own throwaway Postgres (embedded-postgres binaries, no Docker / service)
+      - run: npm run test:coverage

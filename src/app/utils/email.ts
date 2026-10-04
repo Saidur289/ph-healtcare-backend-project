@@ -3,6 +3,7 @@ import AppError from "../errorHelpers/AppError";
 import { StatusCodes } from "http-status-codes";
 import ejs from "ejs";
 
+import { appendFileSync } from "fs";
 import path from "path";
 import { envVars } from "../config/env";
 const transporter = nodemailer.createTransport({
@@ -28,7 +29,15 @@ interface SendEmailOptions {
     }[]
 
 }
+// End-to-end tests (scripts/e2e-server.ts): write emails to a JSON-lines file instead of
+// sending them, so the tests can read verification codes. Ignored in production.
+const outboxFile = envVars.NODE_ENV !== "production" ? process.env.EMAIL_OUTBOX_FILE : undefined;
+
 export const sendEmail = async ({ subject, templateData, templateName, to, attachments }: SendEmailOptions) => {
+    if (outboxFile) {
+        appendFileSync(outboxFile, JSON.stringify({ to, subject, templateName, templateData, at: new Date().toISOString() }) + "\n");
+        return;
+    }
     try {
         const templatePath = path.resolve(process.cwd(), `src/app/templates/${templateName}.ejs`)
         const html = await ejs.renderFile(templatePath, templateData)

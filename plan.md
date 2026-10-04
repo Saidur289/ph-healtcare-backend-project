@@ -924,36 +924,49 @@ What the design looks like:
 **Goal:** important flows are tested automatically, and you catch breakages before users do.
 
 ### Server (Vitest + Supertest + a real test Postgres)
-- [ ] **11.1 [S]** Set up Vitest and a test DB using Docker or Testcontainers. Reset the DB between test files. Add an `npm test` script.
-- [ ] **11.2 [S]** Add test factories that create a user, patient, doctor, admin, schedule and appointment.
-- [ ] **11.3 [S]** Auth tests:
+- [x] **11.1 [S]** Set up Vitest and a test DB using Docker or Testcontainers. Reset the DB between test files. Add an `npm test` script.
+  - _Done: Vitest 5 (`npm test`, `test:coverage`, `test:types`). Instead of Docker/Testcontainers (no Docker here) `tests/globalSetup.ts` starts a throwaway PostgreSQL from the `embedded-postgres` binaries on a free port, migrates it and deletes it afterwards; every test file starts with empty tables. Fake config in `tests/test.env`; see `server/docs/testing.md`._
+- [x] **11.2 [S]** Add test factories that create a user, patient, doctor, admin, schedule and appointment.
+  - _Done: `tests/helpers/factories.ts` (patient, doctor, admin, super admin with real password hashes; slots; appointments + payments)._
+- [x] **11.3 [S]** Auth tests:
   - register, verify, login, refresh, refresh-token reuse detection, logout, change password and reset password;
   - a blocked user is rejected;
   - an unverified user is rejected.
-- [ ] **11.4 [S]** Permission tests: generate one test per row of the permission matrix (4.1), covering every role on every endpoint plus an IDOR attempt.
-- [ ] **11.5 [S]** Booking tests:
+  - _Done: `auth.test.ts` (19 tests), incl. lockout after 5 wrong passwords, tampered/foreign tokens and expired sessions._
+- [x] **11.4 [S]** Permission tests: generate one test per row of the permission matrix (4.1), covering every role on every endpoint plus an IDOR attempt.
+  - _Done: `permissions.test.ts`: every route × 4 roles + anonymous (78 routes), a check that the matrix lists every route in the route files, and IDOR attempts (appointments, files, prescriptions, reviews, doctor profile). Logout and the 3 Google redirects are listed but not called._
+- [x] **11.5 [S]** Booking tests:
   - concurrent booking (20 parallel requests give exactly 1 success);
   - past slot;
   - deleted doctor;
   - overlapping appointments;
   - pay later.
-- [ ] **11.6 [S]** State machine tests: every allowed and disallowed transition.
-- [ ] **11.7 [S]** Payment tests: webhook with a valid and an invalid signature, a duplicate event, a late payment that is auto-refunded, and an expired session. Mock Stripe.
-- [ ] **11.8 [S]** Cron tests: only expired unpaid appointments are cancelled, and a slot that someone else re-booked is not released.
-- [ ] **11.9 [S]** Validation tests: unknown fields are rejected (`.strict()`), the size limits work and bad JSON returns 400.
+  - _Done: `booking.test.ts`: 20 parallel requests → exactly 1 × 201 and 19 × 409; plus unpaid limit, Idempotency-Key, Stripe down (slot given back) and reschedule._
+- [x] **11.6 [S]** State machine tests: every allowed and disallowed transition.
+  - _Done: `state-machine.test.ts`: every status × status × actor against the documented table (113 tests), the time/payment rules, and the HTTP endpoint (slot release, refund first, 502 leaves everything unchanged)._
+- [x] **11.7 [S]** Payment tests: webhook with a valid and an invalid signature, a duplicate event, a late payment that is auto-refunded, and an expired session. Mock Stripe.
+  - _Done: `payments.test.ts` + `invoices.test.ts`: real Stripe signatures with mocked network calls; duplicate events, late payment → refund, retry after a temporary failure, expired sessions (pay now / pay later), dashboard refunds, invoices, reconciliation._
+- [x] **11.8 [S]** Cron tests: only expired unpaid appointments are cancelled, and a slot that someone else re-booked is not released.
+  - _Done: `cron.test.ts`: only expired unpaid appointments are cancelled, a re-booked slot stays booked, two servers at once cancel each appointment once; reminders are sent once._
+- [x] **11.9 [S]** Validation tests: unknown fields are rejected (`.strict()`), the size limits work and bad JSON returns 400.
+  - _Done: `validation.test.ts`: unknown and nested unknown fields → 400, 413 for bodies > 100 kB and files > 5 MB, file content checks, bad JSON → 400, CSRF origin check._
 
 ### Client
-- [ ] **11.10 [C]** Unit tests with Vitest + React Testing Library for:
+- [x] **11.10 [C]** Unit tests with Vitest + React Testing Library for:
   - `authUtils` (redirect validation and route owner);
   - the zod schemas;
   - the login and register forms.
-- [ ] **11.11 [C]** Proxy tests: every role on every route group, with expired, missing and invalid tokens.
-- [ ] **11.12 [C]** End-to-end tests with Playwright against the local server and a test DB:
+  - _Done: Vitest + React Testing Library in the client (`npm test`): authUtils (open redirects, route owners), the zod schemas, LoginForm and RegisterForm (server actions mocked)._
+- [x] **11.11 [C]** Proxy tests: every role on every route group, with expired, missing and invalid tokens.
+  - _Done: `tests/unit/proxy.test.ts` (41 tests): anonymous + 4 roles on 6 route groups; forged, tampered, expired, expiring and missing tokens; refresh success / rejected / API down; forced password change; CSP nonce._
+- [x] **11.12 [C]** End-to-end tests with Playwright against the local server and a test DB:
   - patient: register → verify → book → pay (Stripe test card) → see the appointment;
   - doctor: log in → pick slots → start → complete → write prescription;
   - admin: create doctor → create schedule → view payments;
   - security: a patient opening `/admin/dashboard` is redirected.
-- [ ] **11.13 [S+C]** Coverage goal: at least 80 % on the auth, appointment and payment services. Don't chase 100 % elsewhere.
+  - _Done: `client/tests/e2e` (7 tests, `npm run test:e2e`). Playwright starts `server/scripts/e2e-server.ts`: throwaway Postgres, the real API, a local fake Stripe Checkout (test card page that sends a signed webhook) and Daily.co, and an email outbox for the codes. The real Stripe Checkout page is not driven (that needs real keys + the Stripe CLI); real Stripe was tested by hand on 2026-10-01. CI workflows are written for both repos but have not run yet._
+- [x] **11.13 [S+C]** Coverage goal: at least 80 % on the auth, appointment and payment services. Don't chase 100 % elsewhere.
+  - _Done (enforced by `test:coverage`): auth.service 80.8 %, appointment.service 81.5 %, payment.service 91.1 % of lines; state machine and reminders 100 %._
 
 **Phase done when:** `npm test` passes in both repos, and the E2E suite passes locally and in CI.
 
