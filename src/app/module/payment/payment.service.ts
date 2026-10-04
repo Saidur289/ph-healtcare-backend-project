@@ -1,4 +1,6 @@
 import Stripe from "stripe";
+import { envVars } from "../../config/env";
+import { uploadPrivateFile } from "../../config/privateFiles";
 import { Payment, Prisma } from "../../../generated/prisma/client";
 import { QueryBuilder } from "../../utils/QueryBuilder";
 import { IQueryParams } from "../../interface/query.interface";
@@ -9,7 +11,6 @@ import {
 } from "../../../generated/prisma/enums";
 import { prisma } from "../../lib/prisma";
 import { generateInvoicePDF } from "./payment.utils";
-import { uploadFileToCloudinary } from "../../config/cloudinary.config";
 import { sendEmail } from "../../utils/email";
 import { stripe } from "../../config/stripe.config";
 import { refundCheckoutPayment } from "./payment.stripe";
@@ -257,10 +258,11 @@ const generateAndSendInvoice = async (paymentId: string) => {
     transactionId: payment.transactionId,
     paymentDate,
   });
-  const upload = await uploadFileToCloudinary(pdfBuffer, `ph-healthcare/invoices/${invoiceNumber}.pdf`);
+  // private file reference (privateFiles.ts); the patient downloads it through the app
+  const invoiceRef = await uploadPrivateFile(pdfBuffer, "pdf", "invoices");
   await prisma.payment.update({
     where: { id: payment.id },
-    data: { invoiceUrl: upload.secure_url },
+    data: { invoiceUrl: invoiceRef },
   });
   await sendEmail({
     to: appointment.patient.email,
@@ -269,7 +271,7 @@ const generateAndSendInvoice = async (paymentId: string) => {
     templateData: {
       doctorName: appointment.doctor.name,
       patientName: appointment.patient.name,
-      invoiceUrl: upload.secure_url,
+      invoiceUrl: `${envVars.FRONTEND_URL}/dashboard/my-appointments?tab=past`,
       paymentDate: new Date(paymentDate).toLocaleDateString(),
       transactionId: payment.transactionId,
       amount: payment.amount,

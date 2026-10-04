@@ -39,6 +39,8 @@ const schema = z.object({
   SUPER_ADMIN_PASSWORD: text,
   SUPER_ADMIN_NAME: text,
   ALLOW_STRIPE_TEST_IN_PRODUCTION: z.enum(["true", "false"]).optional(),
+  // AES-256 key for encrypted columns: 32 random bytes, base64 (openssl rand -base64 32)
+  DATA_ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, "base64").length === 32, "must be 32 bytes, base64-encoded (openssl rand -base64 32)"),
 });
 
 const fail = (lines: string[]) => {
@@ -113,6 +115,7 @@ const loadEnvVariables = () => {
     SUPER_ADMIN_EMAIL: env.SUPER_ADMIN_EMAIL,
     SUPER_ADMIN_PASSWORD: env.SUPER_ADMIN_PASSWORD,
     SUPER_ADMIN_NAME: env.SUPER_ADMIN_NAME,
+    DATA_ENCRYPTION_KEY: env.DATA_ENCRYPTION_KEY,
   };
 };
 

@@ -25,3 +25,9 @@ export const updateMyProfileZodSchema = z.strictObject({
 });
 
 export type TUpdateMyProfilePayload = z.infer<typeof updateMyProfileZodSchema>;
+
+// account deletion: the password (email accounts) or the word DELETE (Google accounts)
+export const deleteMyAccountZodSchema = z.strictObject({
+  password: z.string().min(1).max(128).optional(),
+  confirm: z.literal("DELETE").optional(),
+});

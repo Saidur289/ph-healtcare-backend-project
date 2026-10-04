@@ -70,7 +70,8 @@ const updatePatientProfileZodSchema = z.strictObject({
         shouldDelete: z.boolean().optional(),
         reportId: z.uuid().optional(),
         reportName: z.string().optional(),
-        reportLink: z.url().optional(),
+        // set only by the upload middleware (client-sent links are dropped): a private file reference
+        reportLink: z.string().max(500).optional(),
       }),
     )
     .optional()

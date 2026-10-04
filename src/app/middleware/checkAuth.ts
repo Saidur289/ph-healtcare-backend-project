@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from "express";
+import { setContextUser } from "../utils/requestContext";
 import CookieUtils from "../utils/cookie";
 import AppError from "../errorHelpers/AppError";
 import { StatusCodes } from "http-status-codes";
@@ -76,6 +77,7 @@ const createCheckAuth =
         email: user.email,
         role: user.role,
       };
+      setContextUser(user.id, user.role);
       next();
     } catch (error) {
       next(error);

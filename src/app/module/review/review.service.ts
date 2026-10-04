@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { audit } from "../../utils/audit";
 import {
   AppointmentStatus,
   PaymentStatus,
@@ -107,6 +108,9 @@ const setReviewVisibility = async (reviewId: string, payload: { isHidden: boolea
       include: reviewListInclude,
     });
     await recomputeDoctorRating(tx, review.doctorId);
+    return updated;
+  }).then(async (updated) => {
+    await audit({ action: "review.visibility_change", entityType: "Review", entityId: reviewId, meta: { isHidden: payload.isHidden } });
     return updated;
   });
 };

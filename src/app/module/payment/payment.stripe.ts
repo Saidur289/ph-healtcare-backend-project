@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { audit } from "../../utils/audit";
 import { stripe } from "../../config/stripe.config";
 import { envVars } from "../../config/env";
 import AppError from "../../errorHelpers/AppError";
@@ -97,6 +98,7 @@ export const refundCheckoutPayment = async (input: {
       { payment_intent: paymentIntent },
       { idempotencyKey: `refund-${input.paymentId}` },
     );
+    await audit({ action: "payment.refund", entityType: "Payment", entityId: input.paymentId, meta: { refundId: refund.id } });
     return refund.id;
   } catch (error) {
     console.error("Stripe refund failed:", (error as Error).message);

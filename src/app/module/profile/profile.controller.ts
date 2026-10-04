@@ -19,4 +19,15 @@ const updateMyProfile = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, { success: true, httpStatusCode: 200, message: "Profile updated", data: result });
 });
 
-export const ProfileController = { getMyProfile, updateMyProfile };
+const exportMyData = catchAsync(async (req: Request, res: Response) => {
+  const result = await ProfileService.exportMyData(req.user);
+  res.setHeader("Cache-Control", "no-store");
+  sendResponse(res, { success: true, httpStatusCode: 200, message: "Your data", data: result });
+});
+
+const deleteMyAccount = catchAsync(async (req: Request, res: Response) => {
+  await ProfileService.deleteMyAccount(req.user, req.body);
+  sendResponse(res, { success: true, httpStatusCode: 200, message: "Your account has been deleted" });
+});
+
+export const ProfileController = { getMyProfile, updateMyProfile, exportMyData, deleteMyAccount };

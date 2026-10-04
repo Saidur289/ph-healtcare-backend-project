@@ -1,0 +1,21 @@
+// Who did what, to which record, when and from where. Written by utils/audit.ts.
+// Holds no medical content: only ids, the action name and small non-personal details.
+model AuditLog {
+  id         String   @id @default(uuid(7))
+  // null for anonymous actions (e.g. a failed login with an unknown email)
+  actorId    String?
+  actorRole  String?
+  // e.g. "auth.login", "auth.login_failed", "file.read", "user.status_change", "payment.refund"
+  action     String   @db.VarChar(60)
+  entityType String?  @db.VarChar(40)
+  entityId   String?  @db.VarChar(64)
+  ip         String?  @db.VarChar(64)
+  requestId  String?  @db.VarChar(64)
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

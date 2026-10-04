@@ -1,7 +1,8 @@
 import { StatusCodes } from "http-status-codes";
+import { audit } from "../../utils/audit";
 import { deleteFileFromCloudinary } from "../../config/cloudinary.config";
 import AppError from "../../errorHelpers/AppError";
-import { prisma } from "../../lib/prisma";
+import { INCLUDE_DELETED, prisma } from "../../lib/prisma";
 
 type TSpecialtyInput = { title?: string; description?: string; icon?: string };
 
@@ -9,7 +10,8 @@ type TSpecialtyInput = { title?: string; description?: string; icon?: string };
 const withDoctorCount = { _count: { select: { doctorSpecialty: true } } } as const;
 
 const createSpecialty = async (payload: TSpecialtyInput & { title: string }) => {
-    const existing = await prisma.specialty.findUnique({ where: { title: payload.title } });
+    // titles are unique across removed specialties too, so look at deleted rows as well
+    const existing = await prisma.specialty.findUnique({ where: { title: payload.title, isDeleted: INCLUDE_DELETED } });
     if (existing && !existing.isDeleted) {
         throw new AppError(StatusCodes.CONFLICT, "A specialty with this title already exists");
     }
@@ -33,7 +35,7 @@ const updateSpecialty = async (id: string, payload: TSpecialtyInput) => {
     if (!current) throw new AppError(StatusCodes.NOT_FOUND, "Specialty not found");
     if (Object.keys(payload).length === 0) throw new AppError(StatusCodes.BAD_REQUEST, "Nothing to update");
     if (payload.title && payload.title !== current.title) {
-        const taken = await prisma.specialty.findUnique({ where: { title: payload.title }, select: { id: true } });
+        const taken = await prisma.specialty.findUnique({ where: { title: payload.title, isDeleted: INCLUDE_DELETED }, select: { id: true } });
         if (taken) throw new AppError(StatusCodes.CONFLICT, "A specialty with this title already exists");
     }
     const updated = await prisma.specialty.update({ where: { id }, data: payload, include: withDoctorCount });
@@ -48,7 +50,9 @@ const updateSpecialty = async (id: string, payload: TSpecialtyInput) => {
 const deleteSpecialty = async (id: string) => {
     const current = await prisma.specialty.findFirst({ where: { id, isDeleted: false }, select: { id: true } });
     if (!current) throw new AppError(StatusCodes.NOT_FOUND, "Specialty not found");
-    return prisma.specialty.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
+    const removed = await prisma.specialty.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
+    await audit({ action: "admin.delete", entityType: "Specialty", entityId: id });
+    return removed;
 }
 
 export const SpecialtyService = {

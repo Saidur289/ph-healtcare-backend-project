@@ -12,6 +12,8 @@ import { auth } from "./app/lib/auth";
 import qs from "qs";
 import helmet from "helmet";
 import { httpLogger, logger } from "./app/lib/logger";
+import { requestContext } from "./app/utils/requestContext";
+import { runRetentionCleanup } from "./app/utils/retention";
 import { apiLimiter, corsOptions, verifyOrigin } from "./app/middleware/security";
 import { PaymentController } from "./app/module/payment/payment.controller";
 import { AppointmentService } from "./app/module/appointment/appointment.service";
@@ -25,6 +27,8 @@ const app = express();
 app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY ?? "") ? Number(process.env.TRUST_PROXY) : false);
 app.disable("x-powered-by");
 app.use(httpLogger);
+// client IP + request id for the audit log (utils/requestContext.ts)
+app.use(requestContext);
 // security headers. The API only returns JSON / PDFs, so the CSP can be strict.
 app.use(
   helmet({
@@ -78,6 +82,14 @@ cron.schedule("*/5 * * * *", async () => {
     } catch (error) {
       logger.error({ err: error, job: name }, "cron job failed");
     }
+  }
+});
+// Daily at 03:30: delete data past its retention period (docs/data-retention.md)
+cron.schedule("30 3 * * *", async () => {
+  try {
+    await runRetentionCleanup();
+  } catch (error) {
+    logger.error({ err: error, job: "retention cleanup" }, "cron job failed");
   }
 });
 // Daily at 03:00: compare Stripe with the DB and log any mismatch (read-only)

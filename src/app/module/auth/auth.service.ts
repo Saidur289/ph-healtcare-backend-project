@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { audit } from "../../utils/audit";
 import { APIError } from "better-auth/api";
 import { UserStatus } from "../../../generated/prisma/enums";
 import AppError from "../../errorHelpers/AppError";
@@ -88,6 +89,9 @@ const sendVerificationOtp = async (email: string) => {
 };
 
 // Registration never logs the user in: the email must be verified first.
+// bump when the privacy policy / terms change in a way users must accept again
+export const TERMS_VERSION = "2026-10-03";
+
 const registerPatient = async (payload: IRegisterPatientPayload) => {
   const { name, email, password } = payload;
 
@@ -112,6 +116,8 @@ const registerPatient = async (payload: IRegisterPatientPayload) => {
         email: data.user.email,
       },
     });
+    // record the consent given at sign-up (the validator requires acceptTerms: true)
+    await prisma.user.update({ where: { id: data.user.id }, data: { termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION } });
   } catch (error) {
     await prisma.user.delete({ where: { id: data.user.id } }).catch(() => undefined);
     throw error;
@@ -141,6 +147,9 @@ const loginUser = async (payload: ILoginUserPayload) => {
     }
     if (error instanceof APIError && error.statusCode === StatusCodes.UNAUTHORIZED) {
       const locked = loginLimiter.fail(email);
+      // the user id if the account exists (the email itself is not logged)
+      const known = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
+      await audit({ action: "auth.login_failed", actor: known ? { userId: known.id, role: known.role } : null, entityType: "User", entityId: known?.id, meta: { locked } });
       throw new AppError(
         locked ? StatusCodes.TOO_MANY_REQUESTS : StatusCodes.UNAUTHORIZED,
         locked
@@ -161,6 +170,7 @@ const loginUser = async (payload: ILoginUserPayload) => {
   }
 
   const tokens = await issueTokensForSession(data.user, data.token);
+  await audit({ action: "auth.login", actor: { userId: data.user.id, role: (data.user as { role?: string }).role }, entityType: "User", entityId: data.user.id });
   return { user: toSafeUser(data.user), tokens };
 };
 
@@ -291,16 +301,20 @@ const changePassword = async (
     where: { id: requestUser.userId },
     data: { needPasswordChange: false },
   });
+  await audit({ action: "auth.password_changed", actor: { userId: user.id, role: user.role }, entityType: "User", entityId: user.id });
   return issueTokensForSession(user, result.token ?? sessionToken);
 };
 
 const logoutUser = async (sessionToken?: string) => {
   if (!sessionToken) return;
+  // who is logging out (read before better-auth removes the session)
+  const session = await prisma.session.findUnique({ where: { token: sessionToken }, select: { userId: true } });
   await auth.api
     .signOut({ headers: { authorization: `Bearer ${sessionToken}` } })
     .catch(() => undefined);
   // make sure the session row is gone even if better-auth could not find it
   await prisma.session.deleteMany({ where: { token: sessionToken } });
+  if (session) await audit({ action: "auth.logout", actor: { userId: session.userId }, entityType: "User", entityId: session.userId });
 };
 
 const verifyEmail = async (email: string, otp: string) => {
@@ -382,6 +396,7 @@ const resetPassword = async (
       // log out everywhere after a password reset
       prisma.session.deleteMany({ where: { userId: user.id } }),
     ]);
+    await audit({ action: "auth.password_reset", actor: { userId: user.id, role: user.role }, entityType: "User", entityId: user.id });
   }
   return result.success;
 };

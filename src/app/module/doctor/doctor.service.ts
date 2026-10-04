@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { audit } from "../../utils/audit";
 import AppError from "../../errorHelpers/AppError";
 import { prisma } from "../../lib/prisma";
 import { IUpdateDoctorPayload } from "./doctor.interface";
@@ -254,6 +255,7 @@ const deleteDoctor = async (doctorId: string) => {
     await tx.session.deleteMany({ where: { userId: existsDoctor.userId } });
     return doctor;
   });
+  await audit({ action: "admin.delete", entityType: "Doctor", entityId: doctorId });
   return deleteDoctor;
 };
 

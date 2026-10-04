@@ -48,6 +48,8 @@ const registerZodSchema = z.strictObject({
     .max(60, "Name must be at most 60 characters long"),
   email: emailSchema,
   password: passwordSchema,
+  // consent to the privacy policy and terms is required to create an account
+  acceptTerms: z.literal(true, "Please accept the privacy policy and terms"),
 });
 
 const loginZodSchema = z.strictObject({

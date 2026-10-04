@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { decryptHealthData, decryptReport, encryptHealthData, encryptReportName } from "../../utils/healthCrypto";
 import { deleteFileFromCloudinary } from "../../config/cloudinary.config";
 import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
@@ -68,12 +69,14 @@ const updateProfile = async (
             : undefined,
         ) as Date;
       }
+      // free-text notes are encrypted at rest (utils/healthCrypto.ts)
+      const encrypted = encryptHealthData(healthDataToSave);
       await tx.patientHealthData.upsert({
         where: { patientId: patientData.id },
-        update: healthDataToSave,
+        update: encrypted,
         create: {
           patientId: patientData.id,
-          ...healthDataToSave,
+          ...encrypted,
         },
       });
     }
@@ -99,7 +102,7 @@ const updateProfile = async (
           await tx.medicalReport.create({
             data: {
               patientId: patientData.id,
-              reportName: report.reportName,
+              reportName: encryptReportName(report.reportName),
               reportLink: report.reportLink,
             },
           });
@@ -112,7 +115,11 @@ const updateProfile = async (
     where: { email: user.email },
     include: { patientHealthData: true, medicalReports: true },
   });
-  return result;
+  return {
+    ...result,
+    patientHealthData: decryptHealthData(result.patientHealthData),
+    medicalReports: result.medicalReports.map(decryptReport),
+  };
 };
 // ADMIN: patients with account status. Health data and reports are NOT included
 // (medical data is only for the patient and their doctors).

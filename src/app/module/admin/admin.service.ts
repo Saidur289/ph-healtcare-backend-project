@@ -1,4 +1,5 @@
 import { StatusCodes } from "http-status-codes";
+import { audit } from "../../utils/audit";
 import AppError from "../../errorHelpers/AppError";
 import { prisma } from "../../lib/prisma";
 import {
@@ -115,6 +116,7 @@ const deleteAdmin = async (adminId: string, user: IRequestUser) => {
     // read with tx (getAdminById uses the global client and hides deleted admins)
     return tx.admin.findUniqueOrThrow({ where: { id: adminId } });
   });
+  await audit({ action: "admin.delete", entityType: "Admin", entityId: adminId });
   return result;
 };
 
@@ -163,6 +165,7 @@ const changeUserStatus = async (
     }
     return updated;
   });
+  await audit({ action: "user.status_change", entityType: "User", entityId: userId, meta: { from: userToChangeStatus.status, to: userStatus } });
   return result;
 };
 
@@ -214,6 +217,7 @@ const changeUserRole = async (
     await tx.session.deleteMany({ where: { userId } });
     return updated;
   });
+  await audit({ action: "user.role_change", entityType: "User", entityId: userId, meta: { from: userToChangeRole.role, to: role } });
   return result;
 };
 export const AdminService = {

@@ -4,6 +4,7 @@ import { StatusCodes } from "http-status-codes";
 import multer from "multer";
 import AppError from "../errorHelpers/AppError";
 import { cloudinaryUpload, deleteFileFromCloudinary } from "./cloudinary.config";
+import { uploadPrivateFile } from "./privateFiles";
 
 // Uploads: photos and PDF reports only, at most 5 MB each and 5 files per request.
 // Files are held in memory first so their real content (magic bytes) can be checked
@@ -57,7 +58,8 @@ const filesOf = (req: Request): Express.Multer.File[] => {
 
 // second check on the content, then store. Sets file.path to the stored URL (as before),
 // so controllers and the error-handler cleanup keep working unchanged.
-const storeUploads = async (req: Request, _res: Response, next: NextFunction) => {
+// privateFields: fields whose files are medical data (stored private, see privateFiles.ts)
+const storeUploads = (privateFields: string[] = []) => async (req: Request, _res: Response, next: NextFunction) => {
   const files = filesOf(req);
   const stored: string[] = [];
   try {
@@ -66,7 +68,9 @@ const storeUploads = async (req: Request, _res: Response, next: NextFunction) =>
       if (!kind || !kind.matches(file.buffer)) {
         throw new AppError(StatusCodes.BAD_REQUEST, `${NOT_ALLOWED} (the content of "${file.fieldname}" does not match its type)`);
       }
-      file.path = await uploadBuffer(file.buffer, kind);
+      file.path = privateFields.includes(file.fieldname)
+        ? await uploadPrivateFile(file.buffer, kind.ext, file.fieldname)
+        : await uploadBuffer(file.buffer, kind);
       stored.push(file.path);
       file.buffer = Buffer.alloc(0); // free memory early
     }
@@ -78,10 +82,13 @@ const storeUploads = async (req: Request, _res: Response, next: NextFunction) =>
   }
 };
 
-const withStore = (handler: RequestHandler): RequestHandler[] => [handler, storeUploads];
+const withStore = (handler: RequestHandler, privateFields?: string[]): RequestHandler[] => [handler, storeUploads(privateFields)];
 
 export const multerUpload = {
-  single: (field: string) => withStore(memoryUpload.single(field)),
-  fields: (fields: multer.Field[]) => withStore(memoryUpload.fields(fields)),
-  array: (field: string, maxCount = UPLOAD_MAX_FILES) => withStore(memoryUpload.array(field, maxCount)),
+  single: (field: string, options?: { private?: boolean }) =>
+    withStore(memoryUpload.single(field), options?.private ? [field] : []),
+  fields: (fields: multer.Field[], options?: { privateFields?: string[] }) =>
+    withStore(memoryUpload.fields(fields), options?.privateFields),
+  array: (field: string, maxCount = UPLOAD_MAX_FILES, options?: { private?: boolean }) =>
+    withStore(memoryUpload.array(field, maxCount), options?.private ? [field] : []),
 };

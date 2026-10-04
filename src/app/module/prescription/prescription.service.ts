@@ -1,11 +1,13 @@
 import { StatusCodes } from "http-status-codes";
+import { decryptJson, decryptText, encryptJson, encryptText } from "../../utils/fieldEncryption";
+import { envVars } from "../../config/env";
+import { uploadPrivateFile } from "../../config/privateFiles";
 import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { generatePrescriptionPDF } from "./prescription.utils";
 import {
   deleteFileFromCloudinary,
-  uploadFileToCloudinary,
 } from "../../config/cloudinary.config";
 import { sendEmail } from "../../utils/email";
 import {
@@ -28,6 +30,13 @@ const prescriptionInclude = {
   appointment: { select: { id: true, status: true, schedule: true } },
 } satisfies Prisma.PrescriptionInclude;
 
+// instructions + medicines are encrypted in the DB; readers get plain values
+const decryptPrescription = <T extends { instructions: string; medicines: unknown }>(row: T): T => ({
+  ...row,
+  instructions: decryptText(row.instructions),
+  medicines: decryptJson(row.medicines),
+});
+
 // ------------------------------------------------------------------ delivery (PDF + email)
 
 // Builds the PDF, replaces the stored one and emails it. Runs AFTER the prescription is saved;
@@ -42,7 +51,9 @@ const deliverPrescription = async (prescriptionId: string, reason: "new" | "upda
       appointment: { include: { schedule: true } },
     },
   });
-  const medicines = prescription.medicines as unknown as TMedicine[];
+  // stored encrypted (utils/fieldEncryption.ts)
+  const medicines = decryptJson<TMedicine[]>(prescription.medicines);
+  prescription.instructions = decryptText(prescription.instructions);
   const pdfBuffer = await generatePrescriptionPDF({
     doctorName: prescription.doctor.name,
     doctorEmail: prescription.doctor.email,
@@ -56,13 +67,14 @@ const deliverPrescription = async (prescriptionId: string, reason: "new" | "upda
     createdAt: prescription.createdAt,
   });
   const fileName = `Prescription_${prescription.id}_${Date.now()}.pdf`;
-  const uploaded = await uploadFileToCloudinary(pdfBuffer, fileName);
+  // private file: the column holds a reference, readers get a short-lived link (privateFiles.ts)
+  const storedRef = await uploadPrivateFile(pdfBuffer, "pdf", "prescriptions");
   const oldUrl = prescription.pdfUrl;
   await prisma.prescription.update({
     where: { id: prescription.id },
-    data: { pdfUrl: uploaded.secure_url },
+    data: { pdfUrl: storedRef },
   });
-  if (oldUrl && oldUrl !== uploaded.secure_url) {
+  if (oldUrl && oldUrl !== storedRef) {
     await deleteFileFromCloudinary(oldUrl).catch(() => undefined);
   }
 
@@ -84,7 +96,8 @@ const deliverPrescription = async (prescriptionId: string, reason: "new" | "upda
       instructions: prescription.instructions,
       medicines,
       followUpDate: prescription.followUpDate.toLocaleDateString(),
-      pdfUrl: uploaded.secure_url,
+      // the PDF is attached; the link opens the app (login required), never the file itself
+      pdfUrl: `${envVars.FRONTEND_URL}/dashboard/my-prescriptions`,
     },
     attachments: [{ filename: fileName, content: pdfBuffer, contentType: "application/pdf" }],
   });
@@ -150,8 +163,9 @@ const givePrescription = async (user: IRequestUser, payload: ICreatePrescription
       data: {
         appointmentId: appointment.id,
         followUpDate: new Date(payload.followUpDate),
-        instructions: payload.instructions,
-        medicines: payload.medicines as unknown as Prisma.InputJsonValue,
+        // medical content is encrypted at rest
+        instructions: encryptText(payload.instructions),
+        medicines: encryptJson(payload.medicines),
         doctorId: doctorData.id,
         patientId: appointment.patientId,
       },
@@ -165,7 +179,7 @@ const givePrescription = async (user: IRequestUser, payload: ICreatePrescription
     throw error;
   }
   queueDelivery(prescription.id, "new");
-  return prescription;
+  return decryptPrescription(prescription);
 };
 
 const updatePrescription = async (
@@ -181,17 +195,17 @@ const updatePrescription = async (
   const updated = await prisma.prescription.update({
     where: { id: prescriptionId },
     data: {
-      ...(payload.instructions !== undefined ? { instructions: payload.instructions } : {}),
+      ...(payload.instructions !== undefined ? { instructions: encryptText(payload.instructions) } : {}),
       ...(payload.followUpDate !== undefined ? { followUpDate: new Date(payload.followUpDate) } : {}),
       ...(payload.medicines !== undefined
-        ? { medicines: payload.medicines as unknown as Prisma.InputJsonValue }
+        ? { medicines: encryptJson(payload.medicines) }
         : {}),
       emailSentAt: null, // the updated version must be sent again
     },
     include: prescriptionInclude,
   });
   queueDelivery(updated.id, "updated");
-  return updated;
+  return decryptPrescription(updated);
 };
 
 const deletePrescription = async (user: IRequestUser, prescriptionId: string): Promise<void> => {
@@ -213,18 +227,20 @@ const deletePrescription = async (user: IRequestUser, prescriptionId: string): P
 const myPrescriptions = async (user: IRequestUser) => {
   if (user.role === Role.DOCTOR) {
     const doctorData = await getDoctorProfileOrThrow(user);
-    return prisma.prescription.findMany({
+    const rows = await prisma.prescription.findMany({
       where: { doctorId: doctorData.id },
       include: prescriptionInclude,
       orderBy: { createdAt: "desc" },
     });
+    return rows.map(decryptPrescription);
   }
   const patientData = await getPatientProfileOrThrow(user);
-  return prisma.prescription.findMany({
+  const rows = await prisma.prescription.findMany({
     where: { patientId: patientData.id },
     include: prescriptionInclude,
     orderBy: { createdAt: "desc" },
   });
+  return rows.map(decryptPrescription);
 };
 
 // ADMIN: paginated list with patient / doctor search (metadata only)

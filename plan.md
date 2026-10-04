@@ -890,22 +890,30 @@ What the design looks like:
 
 **Goal:** patient health data is treated as sensitive, following HIPAA/GDPR-style practice.
 
-- [ ] **10.1 [S]** Make medical reports, prescriptions and invoices **private**: upload them to Cloudinary as `type: "authenticated"` (or to S3 private storage). Serve them only through **signed URLs that expire** (for example after 5 minutes), from an endpoint that checks ownership.
-- [ ] **10.2 [S]** Add an **audit log** table (`AuditLog`: who, what action, which record, when, IP). Record:
+- [x] **10.1 [S]** Make medical reports, prescriptions and invoices **private**: upload them to Cloudinary as `type: "authenticated"` (or to S3 private storage). Serve them only through **signed URLs that expire** (for example after 5 minutes), from an endpoint that checks ownership.
+  - _Done: reports, prescription PDFs and invoices are uploaded as Cloudinary `authenticated` files under random names; the DB holds a `private:` reference and the API never returns it. `GET /api/v1/files/{reports|prescriptions|invoices}/:id` checks ownership (404 for others) and returns a 5-minute signed URL; the web app opens `/files/...`, which redirects (no-store, no-referrer). Emails link to the dashboard instead of the file. Proven: unsigned URL -> 401, signed -> 200, same link after expiry -> 401._
+- [x] **10.2 [S]** Add an **audit log** table (`AuditLog`: who, what action, which record, when, IP). Record:
   - logins and failed logins;
   - role and status changes;
   - every read of medical reports or prescriptions;
   - refunds;
   - admin deletes.
-- [ ] **10.3 [S]** Use soft delete everywhere for users, doctors, specialties and appointments. Every query filters `isDeleted: false`, ideally through a Prisma client extension so no query can forget it.
-- [ ] **10.4 [S]** Encrypt the most sensitive columns (for example health conditions and allergies) at the application level, or at least make sure the DB disk and backups are encrypted.
-- [ ] **10.5 [S]** Support data export and deletion requests: a patient can download their data, and request account deletion, which anonymizes personal data while keeping financial records.
-- [ ] **10.6 [S]** Data retention: write down how long you keep logs, appointments and medical files, and automate cleanup where it is allowed.
-- [ ] **10.7 [C]** Pages and consent:
+  - _Done: `audit_logs` table and `audit()` helper (actor, role, action, record, IP, request id; never throws). Logged: login / failed login (no email stored), logout, password change/reset, status and role changes, every file read, data export, account deletion, refunds, review visibility, admin deletes._
+- [x] **10.3 [S]** Use soft delete everywhere for users, doctors, specialties and appointments. Every query filters `isDeleted: false`, ideally through a Prisma client extension so no query can forget it.
+  - _Done: Prisma client extension adds `isDeleted: false` to reads of Doctor, Patient, Admin, SuperAdmin and Specialty (`INCLUDE_DELETED` opts out). Users use `status`; appointments are cancelled, never deleted._
+- [x] **10.4 [S]** Encrypt the most sensitive columns (for example health conditions and allergies) at the application level, or at least make sure the DB disk and backups are encrypted.
+  - _Done: AES-256-GCM (`DATA_ENCRYPTION_KEY`, `enc:v1:` format) for prescription instructions and medicines, health-data free text and report names. Back up the key in the secret store: data cannot be read without it. `npm run data:encrypt-existing` encrypts older rows._
+- [x] **10.5 [S]** Support data export and deletion requests: a patient can download their data, and request account deletion, which anonymizes personal data while keeping financial records.
+  - _Done: "Your data" card on My Profile: Download my data (JSON file) and Delete my account (password, or "DELETE" for Google accounts; refused while an appointment is upcoming). Deletion removes health data, reports and files, anonymizes the patient and user, ends sessions, and keeps appointments, prescriptions and payments as anonymous records._
+- [x] **10.6 [S]** Data retention: write down how long you keep logs, appointments and medical files, and automate cleanup where it is allowed.
+  - _Done: written in `server/docs/data-retention.md`. A daily job (03:30) removes expired sessions and codes, webhook events after 90 days, audit logs after 6 years and never-verified empty accounts after 30 days._
+- [x] **10.7 [C]** Pages and consent:
   - add privacy policy and terms pages;
   - add a consent checkbox at register;
   - add a cookie notice if you use analytics.
-- [ ] **10.8 [S+C]** Never put personal or health data in URLs, logs, analytics events or error-tracking payloads. Configure Sentry to scrub it.
+  - _Done: `/privacy` and `/terms` pages (linked in the footer and the register form); register requires the consent checkbox and stores `termsAcceptedAt` + `termsVersion`. No cookie notice: there is no analytics, only essential cookies._
+- [x] **10.8 [S+C]** Never put personal or health data in URLs, logs, analytics events or error-tracking payloads. Configure Sentry to scrub it.
+  - _Done: emails are no longer passed in `?email=` (short-lived httpOnly cookie instead); file links carry only record ids; pino redacts cookies, auth headers, passwords and bodies; audit rows hold ids, not emails. Sentry is not installed yet; its scrubbing is part of 13.10._
 
 **Phase done when:** a medical report URL copied from the browser stops working after it expires, and every read of it appears in the audit log.
 

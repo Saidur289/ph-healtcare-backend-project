@@ -36,6 +36,18 @@ export const uploadFileToCloudinary = async (buffer: Buffer, fileName: string): 
 }
 // accepts a stored Cloudinary URL; the resource type (image / raw / video) is read from it
 export const deleteFileFromCloudinary = async (url: string) => {
+    // private files are stored as "private:<resourceType>:<publicId>:<format>" (config/privateFiles.ts)
+    if (url.startsWith("private:")) {
+        const [resourceType, publicId] = url.slice("private:".length).split(":");
+        if (!resourceType || !publicId) return;
+        try {
+            await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type: "authenticated", invalidate: true });
+        } catch (error) {
+            console.error("Error deleting private file from Cloudinary:", (error as Error)?.message);
+            throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Error deleting file from Cloudinary");
+        }
+        return;
+    }
     const match = url.match(/\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+?)(\.[a-zA-Z0-9]+)?$/);
     if (!match) return;
     const [, resourceType, path, extension] = match;
