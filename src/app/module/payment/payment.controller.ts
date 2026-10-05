@@ -1,3 +1,4 @@
+import { raiseAlert } from "../../lib/errorTracking";
 import { Request, Response } from "express";
 import Stripe from "stripe";
 import { envVars } from "../../config/env";
@@ -38,10 +39,10 @@ const handleStripeEventWebhook = async (req: Request, res: Response) => {
     });
   } catch (error) {
     if (error instanceof AppError && error.statusCode < 500) {
-      console.error(`[stripe-webhook] ${event.type} ${event.id} not processed:`, error.message);
+      raiseAlert("webhook_unmatched", "Stripe webhook not processed", { eventType: event.type, eventId: event.id, reason: error.message });
       return res.status(200).json({ success: false, message: error.message });
     }
-    console.error(`[stripe-webhook] ${event.type} ${event.id} failed, Stripe will retry:`, error);
+    raiseAlert("webhook_failed", "Stripe webhook failed, Stripe will retry", { eventType: event.type, eventId: event.id }, error);
     return res.status(500).json({ success: false, message: "Webhook processing failed" });
   }
 };

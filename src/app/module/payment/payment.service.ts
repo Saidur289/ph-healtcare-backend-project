@@ -1,3 +1,4 @@
+import { raiseAlert } from "../../lib/errorTracking";
 import { enqueueJob } from "../../utils/jobQueue";
 import Stripe from "stripe";
 import { envVars } from "../../config/env";
@@ -55,7 +56,7 @@ const handleCheckoutPaid = async (session: Stripe.Checkout.Session, eventId: str
     ? await prisma.payment.findUnique({ where: { id: paymentId }, include: { appointment: true } })
     : null;
   if (!payment) {
-    console.error(`[stripe-webhook] paid session ${session.id} has no matching payment`);
+    raiseAlert("webhook_unmatched", "paid Stripe session has no matching payment", { sessionId: session.id });
     return { message: "No matching payment" };
   }
   if (payment.status === PaymentStatus.PAID || payment.status === PaymentStatus.REFUNDED) {
@@ -159,7 +160,7 @@ const handleChargeRefunded = async (charge: Stripe.Charge) => {
       })
     : null;
   if (!payment) {
-    console.error(`[stripe-webhook] refunded charge ${charge.id} has no matching payment`);
+    raiseAlert("webhook_unmatched", "refunded Stripe charge has no matching payment", { chargeId: charge.id });
     return { message: "No matching payment" };
   }
   if (payment.status === PaymentStatus.REFUNDED) {
@@ -346,8 +347,7 @@ const reconcilePayments = async () => {
   );
 
   if (problems.length > 0) {
-    // ALERT: picked up by log monitoring (plan.md 13.11)
-    console.error(`[payment-reconciliation] ${problems.length} mismatch(es):\n- ${problems.join("\n- ")}`);
+    raiseAlert("payment_mismatch", `payment reconciliation found ${problems.length} mismatch(es)`, { problems });
   }
   return { checked, problems };
 };

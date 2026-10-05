@@ -1,3 +1,4 @@
+import { raiseAlert } from "../lib/errorTracking";
 import nodemailer from "nodemailer"
 import AppError from "../errorHelpers/AppError";
 import { StatusCodes } from "http-status-codes";
@@ -56,7 +57,8 @@ export const sendEmail = async ({ subject, templateData, templateName, to, attac
         console.log(`Email sent: ${info.messageId}`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-        console.error("Email sending error", error.message);
+        // the recipient is not logged (personal data)
+        raiseAlert("email_failed", "email could not be sent", { template: templateName }, error);
         throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to send email")
 
     }

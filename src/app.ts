@@ -1,3 +1,4 @@
+import { raiseAlert } from "./app/lib/errorTracking";
 import express, { NextFunction, Request, Response } from "express";
 import { IndexRoutes } from "./app/routes";
 import path from "path";
@@ -11,8 +12,9 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./app/lib/auth";
 import qs from "qs";
 import helmet from "helmet";
-import { httpLogger, logger } from "./app/lib/logger";
+import { httpLogger } from "./app/lib/logger";
 import { requestContext } from "./app/utils/requestContext";
+import { registerHealthRoutes } from "./app/utils/lifecycle";
 import { runRetentionCleanup } from "./app/utils/retention";
 import { apiLimiter, corsOptions, verifyOrigin } from "./app/middleware/security";
 import { PaymentController } from "./app/module/payment/payment.controller";
@@ -28,6 +30,8 @@ const app = express();
 // so req.ip (rate limits) is the client and not the proxy. Default: trust nothing.
 app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY ?? "") ? Number(process.env.TRUST_PROXY) : false);
 app.disable("x-powered-by");
+// /health and /ready for the hosting health checks (before the request log: they run every few seconds)
+registerHealthRoutes(app);
 app.use(httpLogger);
 // client IP + request id for the audit log (utils/requestContext.ts)
 app.use(requestContext);
@@ -82,7 +86,7 @@ cron.schedule("*/5 * * * *", async () => {
     try {
       await job();
     } catch (error) {
-      logger.error({ err: error, job: name }, "cron job failed");
+      raiseAlert("cron_failed", "cron job failed", { job: name }, error);
     }
   }
 });
@@ -91,7 +95,7 @@ cron.schedule("30 3 * * *", async () => {
   try {
     await runRetentionCleanup();
   } catch (error) {
-    logger.error({ err: error, job: "retention cleanup" }, "cron job failed");
+    raiseAlert("cron_failed", "cron job failed", { job: "retention cleanup" }, error);
   }
 });
 // Daily at 03:00: compare Stripe with the DB and log any mismatch (read-only)
@@ -99,7 +103,7 @@ cron.schedule("0 3 * * *", async () => {
   try {
     await PaymentService.reconcilePayments();
   } catch (error) {
-    logger.error({ err: error, job: "payment reconciliation" }, "cron job failed");
+    raiseAlert("cron_failed", "cron job failed", { job: "payment reconciliation" }, error);
   }
 });
 // CSRF origin check + general rate limit for the whole API (stricter limits on auth routes)

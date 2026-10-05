@@ -999,35 +999,48 @@ What the design looks like:
 ## Phase 13: DevOps, deployment and monitoring
 
 ### Docker
-- [ ] **13.1 [S]** Make the server Dockerfile multi-stage:
+- [x] **13.1 [S]** Make the server Dockerfile multi-stage:
   - `deps` → `build` (`prisma generate` + `tsc`) → `runtime` (`node:22-alpine`, production deps only);
   - run as the **non-root** `node` user;
   - `CMD ["node", "dist/server.js"]`;
   - fix the missing `prisma:generate` script.
-- [ ] **13.2 [S]** Run migrations with `prisma migrate deploy` as a separate step or job before the app starts. Never use `migrate dev` or `db push` in production.
-- [ ] **13.3 [C]** Make the client Dockerfile multi-stage with `output: "standalone"` in `next.config.ts`:
+  - _Replaced (no Docker): `npm run build` = `prisma generate` + type-check + esbuild bundle → `dist/server.js`, `npm start` runs it with plain Node (checked locally). `prisma:generate` script added; generating no longer needs the app's secrets. Non-root / alpine: the host's concern (`server/docs/deployment.md`)._
+- [x] **13.2 [S]** Run migrations with `prisma migrate deploy` as a separate step or job before the app starts. Never use `migrate dev` or `db push` in production.
+  - _Done: `npm run migrate:deploy` (`prisma migrate deploy`) as the host's release step before the new version starts; documented that `migrate dev` / `db push` never run against shared databases._
+- [x] **13.3 [C]** Make the client Dockerfile multi-stage with `output: "standalone"` in `next.config.ts`:
   - `next build` in the build stage, `node server.js` at runtime;
   - non-root user;
   - no `npm install` in `CMD`.
-- [ ] **13.4 [S+C]** Add a `docker-compose.yml` at `mission-6/` with Postgres, Redis, the server and the client for one-command local start-up.
+  - _Replaced (no Docker): `output: "standalone"` via `npm run build:standalone` → `node .next/standalone/server.js` (checked: pages, static files, CSP). The normal build stays for Vercel and the e2e tests._
+- [x] **13.4 [S+C]** Add a `docker-compose.yml` at `mission-6/` with Postgres, Redis, the server and the client for one-command local start-up.
+  - _Deferred on purpose: no Docker on this machine. Local start-up without it: Neon dev database + `npm run dev` in both repos; tests and e2e start their own throwaway Postgres; no Redis is needed (12.3 / 12.4)._
 
 ### CI/CD (GitHub Actions)
-- [ ] **13.5 [S+C]** On every PR: install → lint → type-check → test → build. Block the merge if anything fails.
-- [ ] **13.6 [S+C]** Turn on secret scanning (`gitleaks`) and dependency audit in CI.
+- [x] **13.5 [S+C]** On every PR: install → lint → type-check → test → build. Block the merge if anything fails.
+  - _Done: CI in both repos runs install → lint → type-check → tests → build (client: + e2e). Blocking merges is a GitHub setting: branch protection → require the `ci` checks (see `server/docs/deployment.md`)._
+- [x] **13.6 [S+C]** Turn on secret scanning (`gitleaks`) and dependency audit in CI.
+  - _Done: gitleaks over the whole history (fake test values allowed in `.gitleaks.toml`) and `npm audit --omit=dev --audit-level=high` in CI. Production audit is now 0 in both repos: patched `mysql2` / `deepmerge-ts` via overrides (server), `shadcn` CLI moved to devDependencies (client)._
 - [ ] **13.7 [S+C]** Use three environments, **dev**, **staging** and **production**, each with its own DB, Stripe keys and secrets. Deploy to staging automatically and to production manually.
+  - _Not yet (needs the hosting choice): plan in `server/docs/deployment.md` (one Neon branch/project, Stripe keys, secrets and encryption key per environment; staging auto, production manual). `.env.example` files list every setting._
 
 ### Operations
-- [ ] **13.8 [S]** Add `GET /health` (the process is alive) and `GET /ready` (DB and Redis reachable), and use them in the hosting health checks.
-- [ ] **13.9 [S]** Graceful shutdown on SIGTERM:
+- [x] **13.8 [S]** Add `GET /health` (the process is alive) and `GET /ready` (DB and Redis reachable), and use them in the hosting health checks.
+  - _Done: `GET /health` (alive) and `GET /ready` (database answers within 3 s, 503 while shutting down); no Redis to check. Tested._
+- [x] **13.9 [S]** Graceful shutdown on SIGTERM:
   - stop accepting new requests;
   - finish in-flight ones;
   - stop the cron;
   - `prisma.$disconnect()`;
   - exit.
-- [ ] **13.10 [S+C]** Error tracking with Sentry (or similar) on both apps, with personal data scrubbing (10.8).
+  - _Done (`utils/lifecycle.ts`): not-ready → stop accepting → finish in-flight requests → stop cron → finish the running job → flush error reports → `prisma.$disconnect()` → exit; forced exit after 10 s. Tested with a real in-flight request._
+- [x] **13.10 [S+C]** Error tracking with Sentry (or similar) on both apps, with personal data scrubbing (10.8).
+  - _Done: Sentry on the API and both sides of the Next app, active only with a DSN; personal data off at collection (`dataCollection`) and scrubbed again in `beforeSend` (tested); browser reports go through `/monitoring`. Also stopped the Next dev server from printing server-action arguments (it logged passwords)._
 - [ ] **13.11 [S]** Uptime monitoring and alerts for: API down, webhook failures, cron failures, email failures and payment mismatches (6.9).
+  - _Code side done: one `alert`-tagged error log + Sentry report for webhook failures, unmatched webhooks, payment mismatches, cron failures, failed jobs and email failures (`raiseAlert`). Still to do: connect an uptime monitor to `/health` and create the alert rules (needs the hosting / monitoring accounts)._
 - [ ] **13.12 [S]** Automated daily DB backups with at least 7–30 days of retention. **Test a restore** at least once.
+  - _Not yet: Neon point-in-time restore exists; set the retention and test one restore into a new branch (steps in `server/docs/deployment.md`). Back up `DATA_ENCRYPTION_KEY` separately._
 - [ ] **13.13 [S+C]** HTTPS everywhere. Redirect HTTP to HTTPS. Point the Stripe webhook at the production HTTPS URL.
+  - _Not yet (needs the hosting): HTTPS + redirect at the host, https `FRONTEND_URL` / `BETTER_AUTH_URL`, Stripe webhook at `https://<api-host>/webhook`._
 
 ---
 

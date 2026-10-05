@@ -1,3 +1,4 @@
+import { raiseAlert } from "../lib/errorTracking";
 // A small, durable job queue in Postgres (plan.md 12.3) for work that must not run inside a
 // request: invoice / prescription PDFs, Cloudinary uploads and emails.
 //
@@ -85,8 +86,8 @@ const runJob = async (job: TJobRow) => {
     const message = (error as Error)?.message ?? String(error);
     if (job.attempts >= job.maxAttempts) {
       await prisma.job.update({ where: { id: job.id }, data: { status: "FAILED", lockedAt: null, lastError: message } });
-      // ALERT: picked up by log monitoring; a person decides what to do
-      logger.error({ jobId: job.id, type: job.type, attempts: job.attempts, err: message }, "background job failed permanently");
+      // a person decides what to do (the job row keeps the last error for 30 days)
+      raiseAlert("job_failed", "background job failed permanently", { jobId: job.id, type: job.type, attempts: job.attempts }, error);
       return "failed" as const;
     }
     await prisma.job.update({
@@ -109,25 +110,31 @@ export const runDueJobs = async (limit = 10) => {
 // ---------------------------------------------------------------- the worker (server.ts)
 let timer: NodeJS.Timeout | undefined;
 let running = false;
+let currentRun: Promise<void> | undefined;
 
 export const startJobWorker = (intervalMs = 5_000) => {
   if (timer) return;
   timer = setInterval(async () => {
     if (running) return;
     running = true;
-    try {
-      // keep going while full batches come back, so a backlog drains quickly
-      while ((await runDueJobs(10).then((r) => r.done + r.retry + r.failed)) === 10);
-    } catch (error) {
-      logger.error({ err: error }, "job worker error");
-    } finally {
-      running = false;
-    }
+    currentRun = (async () => {
+      try {
+        // keep going while full batches come back, so a backlog drains quickly
+        while (timer && (await runDueJobs(10).then((r) => r.done + r.retry + r.failed)) === 10);
+      } catch (error) {
+        logger.error({ err: error }, "job worker error");
+      } finally {
+        running = false;
+      }
+    })();
+    await currentRun;
   }, intervalMs);
   timer.unref?.();
 };
 
-export const stopJobWorker = () => {
+// stops polling and waits for the job that is running right now (graceful shutdown)
+export const stopJobWorker = async () => {
   if (timer) clearInterval(timer);
   timer = undefined;
+  await currentRun?.catch(() => undefined);
 };

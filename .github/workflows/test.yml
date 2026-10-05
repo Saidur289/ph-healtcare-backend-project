@@ -1,4 +1,7 @@
-name: test
+name: ci
+
+# On every push / PR: install -> lint -> type-check -> test -> build, plus a dependency audit and a
+# secret scan. Make "ci" a required check (branch protection) to block merging when it fails.
 
 on:
   push:
@@ -17,10 +20,20 @@ jobs:
       - run: npm ci
       # src/generated is not committed
       - run: npx prisma generate
-        env:
-          # prisma.config.ts validates the env; the test values are fake
-          DOTENV_CONFIG_PATH: tests/test.env
       - run: npm run lint
       - run: npm run test:types
       # starts its own throwaway Postgres (embedded-postgres binaries, no Docker / service)
       - run: npm run test:coverage
+      - run: npm run build
+      # production dependencies only; the Prisma CLI findings are pinned via "overrides"
+      - run: npm audit --omit=dev --audit-level=high
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan the whole history
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

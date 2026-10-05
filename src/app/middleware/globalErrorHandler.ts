@@ -1,3 +1,4 @@
+import { reportError } from "../lib/errorTracking";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextFunction, Request, Response } from "express";
 import multer from "multer";
@@ -117,7 +118,10 @@ const globalErrorHandler = async (
   }
   // 5xx: log the full error with the request id (pino redacts secrets / personal fields).
   // 4xx are expected (validation, auth, not found); the request logger already records them.
-  if (statusCode >= 500) ((req as Request & { log?: typeof logger }).log ?? logger).error({ err, statusCode }, "request failed");
+  if (statusCode >= 500) {
+    ((req as Request & { log?: typeof logger }).log ?? logger).error({ err, statusCode }, "request failed");
+    reportError(err, { statusCode, method: req.method, path: req.path });
+  }
   const errorResponse: TErrorResponse = {
     success: false,
     message: message,

@@ -1,0 +1,9 @@
+# Secret scanning (CI "secrets" job). Default rules, but the fake test-only values are allowed.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fake, test-only values (tests/test.env and test helpers)"
+paths = [
+  '''^tests/''',
+]
