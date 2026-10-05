@@ -83,6 +83,7 @@ const MATRIX: Record<string, TRow[]> = {
     { method: "get", path: `/appointments/my-single-appointment/${ID}`, access: ["PATIENT", "DOCTOR"] },
     { method: "patch", path: `/appointments/change-appointment-status/${ID}`, access: ["DOCTOR", "PATIENT", "ADMIN", "SUPER_ADMIN"] },
     { method: "post", path: "/appointments/book-appointment-with-pay-later", access: ["PATIENT"] },
+    { method: "get", path: `/appointments/${ID}/medical-history`, access: ["DOCTOR"] },
     { method: "get", path: `/appointments/${ID}/join`, access: ["PATIENT", "DOCTOR"] },
     { method: "patch", path: `/appointments/reschedule/${ID}`, access: ["PATIENT"] },
     { method: "post", path: `/appointments/initiate-payment/${ID}`, access: ["PATIENT"] },
@@ -115,7 +116,7 @@ const MATRIX: Record<string, TRow[]> = {
   ],
   payment: [{ method: "get", path: "/payments", access: ADMINS }],
   files: [
-    { method: "get", path: `/files/reports/${ID}`, access: ["PATIENT"] },
+    { method: "get", path: `/files/reports/${ID}`, access: ["PATIENT", "DOCTOR"] },
     { method: "get", path: `/files/prescriptions/${ID}`, access: ["PATIENT", "DOCTOR"] },
     { method: "get", path: `/files/invoices/${ID}`, access: ["PATIENT", "ADMIN", "SUPER_ADMIN"] },
   ],

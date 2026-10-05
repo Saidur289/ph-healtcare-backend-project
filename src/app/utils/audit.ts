@@ -14,6 +14,7 @@ export type TAuditAction =
   | "user.account_deleted"
   | "user.data_export"
   | "file.read"
+  | "patient.medical_history_read"
   | "payment.refund"
   | "appointment.cancel"
   | "review.visibility_change"

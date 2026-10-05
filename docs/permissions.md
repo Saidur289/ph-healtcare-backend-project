@@ -63,6 +63,10 @@ Someone else's record is answered with **404** (we don't confirm it exists) or *
 | appointments | GET | `/appointments/my-single-appointment/:id` | PATIENT, DOCTOR | own only; someone else's id → 404 |
 | appointments | PATCH | `/appointments/change-appointment-status/:id` | DOCTOR, PATIENT, ADMIN, SA | owner or admin, rules in `appointment.stateMachine.ts` (see docs/booking.md) |
 | patients | PATCH | `/patients/update-profile` | PATIENT | self; can delete only own reports; file links only from uploads |
+| appointments | GET | `/appointments/:id/medical-history` | DOCTOR | own appointment, SCHEDULED / INPROGRESS / COMPLETED; health data + report list; audited (`patient.medical_history_read`) |
+| files | GET | `/files/reports/:id` | PATIENT, DOCTOR | patient: own; doctor: patients with an own SCHEDULED / INPROGRESS / COMPLETED appointment; 5-minute signed link; audited |
+| files | GET | `/files/prescriptions/:id` | PATIENT, DOCTOR | the prescription's patient or doctor; audited |
+| files | GET | `/files/invoices/:id` | PATIENT, ADMIN, SA | the paying patient or an admin; audited |
 | prescriptions | GET | `/prescriptions` | ADMIN, SA | — |
 | prescriptions | POST | `/prescriptions` | DOCTOR | only the appointment's doctor |
 | prescriptions | GET | `/prescriptions/my-prescriptions` | DOCTOR, PATIENT | own only |

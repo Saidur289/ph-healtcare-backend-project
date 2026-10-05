@@ -5,6 +5,7 @@ import AppError from "../../errorHelpers/AppError";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { prisma } from "../../lib/prisma";
 import { audit } from "../../utils/audit";
+import { MEDICAL_HISTORY_STATUSES } from "../appointment/appointment.constant";
 
 // One answer for "missing" and "not yours", so ids can't be probed.
 const notFound = () => new AppError(StatusCodes.NOT_FOUND, "File not found");
@@ -16,11 +17,18 @@ const issueLink = async (user: IRequestUser, stored: string | null | undefined, 
   return { url, expiresInSeconds: PRIVATE_LINK_TTL_SECONDS };
 };
 
-// medical report: only the patient who uploaded it
+// medical report: the patient who uploaded it, or a doctor treating that patient (an own
+// appointment that is upcoming, in progress or completed - same rule as the medical history)
 const getReportLink = async (user: IRequestUser, reportId: string) => {
-  if (user.role !== Role.PATIENT) throw notFound();
+  if (user.role !== Role.PATIENT && user.role !== Role.DOCTOR) throw notFound();
   const report = await prisma.medicalReport.findFirst({
-    where: { id: reportId, patient: { userId: user.userId } },
+    where: {
+      id: reportId,
+      patient:
+        user.role === Role.PATIENT
+          ? { userId: user.userId }
+          : { appointments: { some: { doctor: { userId: user.userId }, status: { in: [...MEDICAL_HISTORY_STATUSES] } } } },
+    },
     select: { id: true, reportLink: true },
   });
   if (!report) throw notFound();

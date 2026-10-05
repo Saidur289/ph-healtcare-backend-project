@@ -23,5 +23,7 @@ export const DEFAULT_CLINIC_TIME_ZONE = process.env.CLINIC_TIME_ZONE || "Asia/Dh
 
 // statuses that hold a slot
 export const ACTIVE_APPOINTMENT_STATUSES = ["SCHEDULED", "INPROGRESS"] as const;
+// a doctor may read a patient's medical history through these of their own appointments
+export const MEDICAL_HISTORY_STATUSES = ["SCHEDULED", "INPROGRESS", "COMPLETED"] as const;
 
 export const minutes = (value: number) => value * 60 * 1000;

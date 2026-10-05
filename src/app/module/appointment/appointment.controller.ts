@@ -87,6 +87,17 @@ const rescheduleAppointment = catchAsync(
     });
   },
 );
+const getMedicalHistory = catchAsync(async (req: Request, res: Response) => {
+  const result = await AppointmentService.getMedicalHistory(req.user, req.params.id as string);
+  res.setHeader("Cache-Control", "no-store");
+  sendResponse(res, {
+    httpStatusCode: StatusCodes.OK,
+    success: true,
+    message: "Medical history fetched",
+    data: result,
+  });
+});
+
 const joinVideoCall = catchAsync(async (req: Request, res: Response) => {
   const result = await AppointmentService.joinVideoCall(req.user, req.params.id as string);
   sendResponse(res, {
@@ -136,6 +147,7 @@ export const AppointmentController = {
   changeAppointmentStatus,
   rescheduleAppointment,
   joinVideoCall,
+  getMedicalHistory,
   bookAppointmentWithPayLater,
   initiatePayment,
 };

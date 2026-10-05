@@ -44,6 +44,12 @@ router.post(
   validateRequest(AppointmentValidation.bookAppointmentZodSchema),
   AppointmentController.bookAppointmentWithPayLater,
 );
+// DOCTOR: the patient's health data + reports through the doctor's own appointment (audited)
+router.get(
+  "/:id/medical-history",
+  checkAuth(Role.DOCTOR),
+  AppointmentController.getMedicalHistory,
+);
 router.get(
   "/:id/join",
   checkAuth(Role.PATIENT, Role.DOCTOR),

@@ -1,3 +1,5 @@
+import { audit } from "../../utils/audit";
+import { decryptHealthData, decryptReport } from "../../utils/healthCrypto";
 import { StatusCodes } from "http-status-codes";
 import { v7 as uuidv7 } from "uuid";
 import AppError from "../../errorHelpers/AppError";
@@ -24,6 +26,7 @@ import {
   PAY_LATER_MIN_LEAD_MIN,
   PAY_NOW_WINDOW_MIN,
   START_ALLOWED_BEFORE_MIN,
+  MEDICAL_HISTORY_STATUSES,
 } from "./appointment.constant";
 import { assertVideoConfigured, createMeetingToken, ensureRoom } from "../video/daily";
 import { assertTransitionAllowed, TAppointmentActor } from "./appointment.stateMachine";
@@ -559,6 +562,66 @@ const rescheduleAppointment = async (
 // Returns a Daily.co room url + short-lived token for this appointment's patient or doctor.
 // Allowed only when paid, SCHEDULED/INPROGRESS, and from 10 min before start until the slot ends.
 // The doctor joining moves a SCHEDULED appointment to INPROGRESS.
+// DOCTOR: the patient's health data and report list, through one of the doctor's own
+// appointments that is upcoming, in progress or completed (not cancelled / no-show).
+// Someone else's appointment looks exactly like a missing one (404). Every read is audited.
+const getMedicalHistory = async (user: IRequestUser, appointmentId: string) => {
+  const appointment = await prisma.appointment.findFirst({
+    where: {
+      id: appointmentId,
+      doctor: { userId: user.userId },
+      status: { in: [...MEDICAL_HISTORY_STATUSES] },
+    },
+    select: {
+      id: true,
+      patient: {
+        select: {
+          id: true,
+          name: true,
+          profilePhoto: true,
+          patientHealthData: true,
+          medicalReports: { select: { id: true, reportName: true, reportLink: true, createdAt: true }, orderBy: { createdAt: "desc" } },
+        },
+      },
+    },
+  });
+  if (!appointment) throw new AppError(StatusCodes.NOT_FOUND, "Appointment not found");
+  const { patient } = appointment;
+  await audit({
+    action: "patient.medical_history_read",
+    actor: { userId: user.userId, role: user.role },
+    entityType: "Patient",
+    entityId: patient.id,
+    meta: { appointmentId: appointment.id },
+  });
+  const health = patient.patientHealthData ? decryptHealthData(patient.patientHealthData) : null;
+  return {
+    patient: { id: patient.id, name: patient.name, profilePhoto: patient.profilePhoto },
+    healthData: health
+      ? {
+          gender: health.gender,
+          dateOfBirth: health.dateOfBirth,
+          bloodGroup: health.bloodGroup,
+          height: health.height,
+          weight: health.weight,
+          hasAllergies: health.hasAllergies,
+          hasDiabetes: health.hasDiabetes,
+          smokingStatus: health.smokingStatus,
+          pregnancyStatus: health.pregnancyStatus,
+          hasPastSurgeries: health.hasPastSurgeries,
+          recentAnxiety: health.recentAnxiety,
+          recentDepression: health.recentDepression,
+          dietaryPreferences: health.dietaryPreferences,
+          mentalHealthHistory: health.mentalHealthHistory,
+          immunizationStatus: health.immunizationStatus,
+          updatedAt: health.updatedAt,
+        }
+      : null,
+    // file references stay on the server: reports open through /files/reports/:id
+    reports: patient.medicalReports.map((r) => ({ id: r.id, reportName: decryptReport(r).reportName, createdAt: r.createdAt, hasFile: Boolean(r.reportLink) })),
+  };
+};
+
 const joinVideoCall = async (user: IRequestUser, appointmentId: string) => {
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
@@ -770,6 +833,7 @@ export const AppointmentService = {
   changeAppointmentStatus,
   rescheduleAppointment,
   joinVideoCall,
+  getMedicalHistory,
   bookAppointmentWithPayLater,
   initiatePayment,
   cancelUnpaidAppointment,

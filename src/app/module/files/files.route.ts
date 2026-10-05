@@ -23,7 +23,8 @@ const respond = (res: Response, data: { url: string; expiresInSeconds: number })
 // GET -> { url, expiresInSeconds }; every call is written to the audit log
 router.get(
   "/reports/:id",
-  checkAuth(Role.PATIENT),
+  // patients: their own reports; doctors: patients they are treating (rule in files.service.ts)
+  checkAuth(Role.PATIENT, Role.DOCTOR),
   catchAsync(async (req, res) => respond(res, await FilesService.getReportLink(req.user, id(req)))),
 );
 router.get(
