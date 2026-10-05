@@ -225,3 +225,33 @@ describe("reschedule", () => {
     expect((await prisma.appointment.findUniqueOrThrow({ where: { id: appointment.id } })).scheduleId).toBe(soon.id);
   });
 });
+
+describe("responses only carry what the app shows (plan.md 12.2)", () => {
+  it("my-appointments / single appointment: no Stripe data, checkout links or private doctor fields", async () => {
+    const p = await createPatient();
+    const c = await login(p.email, p.password);
+    const slot = await createSlot(doctor.doctor.id, 130 * HOUR);
+    const { appointment } = await createAppointment({
+      patientId: p.patient.id,
+      doctorId: doctor.doctor.id,
+      scheduleId: slot.id,
+      paymentStatus: PaymentStatus.PAID,
+      checkoutSessionId: "cs_test_secret_session",
+      stripePaymentIntentId: "pi_test_secret_intent",
+    });
+    await prisma.doctor.update({ where: { id: doctor.doctor.id }, data: { contactNumber: "01700000000", address: "Private address 12" } });
+
+    const list = await api().get(`${API}/appointments/my-appointments`).set("Cookie", c);
+    const single = await api().get(`${API}/appointments/my-single-appointment/${appointment.id}`).set("Cookie", c);
+    for (const res of [list, single]) {
+      expect(res.status).toBe(200);
+      const body = JSON.stringify(res.body);
+      for (const secret of ["paymentGatewayData", "checkoutUrl", "cs_test_secret_session", "pi_test_secret_intent", "registrationNumber", "01700000000", "Private address 12"]) {
+        expect(body, secret).not.toContain(secret);
+      }
+      // what the UI needs is still there
+      expect(body).toContain(doctor.doctor.name);
+      expect(body).toContain('"amount":1000');
+    }
+  });
+});

@@ -974,18 +974,25 @@ What the design looks like:
 
 ## Phase 12: Performance and data quality
 
-- [ ] **12.1 [S]** Add DB indexes for real query patterns:
+- [x] **12.1 [S]** Add DB indexes for real query patterns:
   - `Appointment(patientId, status)`, `Appointment(doctorId, status)`;
   - `Schedule(startDateTime)`;
   - `Payment(status)`;
   - `Doctor(isDeleted)`.
   - Check slow queries with `EXPLAIN ANALYZE`.
-- [ ] **12.2 [S]** Remove N+1 queries and huge includes. List endpoints should `select` only the columns the UI shows.
-- [ ] **12.3 [S]** Keep heavy work (PDF, email, Cloudinary upload) out of request/response handlers. Use a job queue such as BullMQ + Redis with retries.
-- [ ] **12.4 [S]** Cache the public doctor list and specialties for a short time (60 s) using Redis or HTTP cache headers.
-- [ ] **12.5 [C]** Use Server Components for read-only pages, `next/image` for photos (configure Cloudinary `remotePatterns`), and dynamic import for charts.
-- [ ] **12.6 [C]** Set a sensible TanStack Query `staleTime`, and don't refetch on every window focus for admin tables.
-- [ ] **12.7 [S]** Seed data script for development: 10 specialties, 20 doctors, schedules for the next 14 days and sample patients. Never run it in production.
+  - _Done: `(patientId, status)` and `(doctorId, status)` replace the single-column appointment indexes; the other listed indexes already existed. Measured with EXPLAIN ANALYZE on 200,000 appointments: unpaid count 2.45 → 0.26 ms, doctor stats 9.8 → 5.5 ms (`server/docs/performance.md`). Migrations checked against the schema (no drift)._
+- [x] **12.2 [S]** Remove N+1 queries and huge includes. List endpoints should `select` only the columns the UI shows.
+  - _Done: appointment lists / details / booking / status responses select only shown fields (the stored Stripe session, checkout URLs, Stripe ids, address and phone no longer leave the API; a test fails if they come back); doctor-schedule detail no longer returns the whole doctor; create-doctor checks specialties in one query instead of one per id._
+- [x] **12.3 [S]** Keep heavy work (PDF, email, Cloudinary upload) out of request/response handlers. Use a job queue such as BullMQ + Redis with retries.
+  - _Done without Redis: a durable job queue in Postgres (`jobs` table, `utils/jobQueue.ts`, FOR UPDATE SKIP LOCKED, retries with backoff, FAILED + error log, stale-lock recovery). Invoice PDF/upload/email (queued in the payment's transaction), prescription PDF/upload/email and reminder emails run there; worker in `server.ts`. Verification / reset codes are still sent directly (queueing them would store the code in plain text). 11 queue tests._
+- [x] **12.4 [S]** Cache the public doctor list and specialties for a short time (60 s) using Redis or HTTP cache headers.
+  - _Done: public doctor list and specialties cached in memory for 60 s and cleared on every successful change (doctors, specialties, reviews, account status, profiles), plus `Cache-Control: public, max-age=60, stale-while-revalidate=300`. Also fixed: blocked doctors were still listed publicly._
+- [x] **12.5 [C]** Use Server Components for read-only pages, `next/image` for photos (configure Cloudinary `remotePatterns`), and dynamic import for charts.
+  - _Done: every page was already a Server Component; avatars now load a 192 px Cloudinary copy (crop + WebP/AVIF) instead of the full upload; specialty icons use `next/image` with Cloudinary `remotePatterns`; the admin dashboard charts load with `next/dynamic` (browser only, skeleton placeholder)._
+- [x] **12.6 [C]** Set a sensible TanStack Query `staleTime`, and don't refetch on every window focus for admin tables.
+  - _Done: `staleTime` 60 s (already), `refetchOnWindowFocus: false` by default; the two admin views that forced a refetch on every focus no longer do. Data still refreshes after mutations._
+- [x] **12.7 [S]** Seed data script for development: 10 specialties, 20 doctors, schedules for the next 14 days and sample patients. Never run it in production.
+  - _Done: `npm run seed:dev` (10 specialties, 20 doctors, slots for 14 days, 10 patients with paid past consultations and reviews; ratings computed). Safe to run again, `--reset` removes only seed accounts, refuses `NODE_ENV=production`, sends no emails._
 
 ---
 

@@ -44,8 +44,12 @@ const main = async () => {
   const { seedSuperAdmin } = await import("../src/app/utils/seed");
   const { prisma } = await import("../src/app/lib/prisma");
   const { auth } = await import("../src/app/lib/auth");
+  // fixtures write straight to the database, past the API: clear the public list cache after them
+  const { clearResponseCache } = await import("../src/app/utils/responseCache");
   await seedSuperAdmin();
   const apiServer = app.listen(API_PORT);
+  const { startJobWorker } = await import("../src/app/utils/jobQueue");
+  startJobWorker(1_000);
 
   // ------------------------------------------------------------ fakes
   const stripe = new Stripe(env.STRIPE_SECRET_KEY);
@@ -81,6 +85,7 @@ const main = async () => {
     try {
       const url = new URL(req.url ?? "/", FAKES);
       const route = `${req.method} ${url.pathname}`;
+      if (url.pathname.startsWith("/__e2e/fixtures/")) res.on("finish", clearResponseCache);
 
       // --- Stripe API (form-encoded requests from the stripe library)
       if (route === "POST /v1/checkout/sessions") {

@@ -40,9 +40,33 @@ const isUniqueViolation = (error: unknown) =>
 // interactive transactions wait for a free DB connection instead of failing at 2 s (P2028)
 const BOOKING_TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 
+// What responses may contain about related rows: only the columns the app shows.
+// (Never the payment's raw Stripe data, checkout URL or Stripe ids, nor a person's address/phone.)
+const scheduleSelect = { id: true, startDateTime: true, endDateTime: true } satisfies Prisma.ScheduleSelect;
+const paymentSelect = {
+  id: true,
+  amount: true,
+  transactionId: true,
+  status: true,
+  invoiceUrl: true,
+  invoiceNumber: true,
+  paidAt: true,
+  refundedAt: true,
+} satisfies Prisma.PaymentSelect;
+const doctorSummarySelect = {
+  id: true,
+  name: true,
+  email: true,
+  profilePhoto: true,
+  designation: true,
+  currentWorkingPlace: true,
+  appointmentFee: true,
+} satisfies Prisma.DoctorSelect;
+const patientSummarySelect = { id: true, name: true, email: true, profilePhoto: true } satisfies Prisma.PatientSelect;
+
 const appointmentWithPayment = {
-  payment: true,
-  schedule: true,
+  payment: { select: paymentSelect },
+  schedule: { select: scheduleSelect },
   doctor: { select: { id: true, name: true, designation: true, profilePhoto: true } },
 } satisfies Prisma.AppointmentInclude;
 
@@ -62,10 +86,12 @@ const findByIdempotencyKey = async (patientId: string, idempotencyKey: string) =
       "This booking attempt was cancelled. Please try booking again.",
     );
   }
-  const paymentUrl =
+  // the Stripe session id is internal: read it separately, it is not part of the response
+  const sessionId =
     existing.paymentStatus === PaymentStatus.UNPAID
-      ? await getOpenCheckoutUrl(existing.payment?.checkoutSessionId)
+      ? (await prisma.payment.findUnique({ where: { appointmentId: existing.id }, select: { checkoutSessionId: true } }))?.checkoutSessionId
       : null;
+  const paymentUrl = sessionId ? await getOpenCheckoutUrl(sessionId) : null;
   return { appointment: existing, payment: existing.payment, paymentUrl };
 };
 
@@ -246,7 +272,7 @@ const createBooking = async (
     where: { id: created.appointment.id },
     include: appointmentWithPayment,
   });
-  return { appointment, payment: created.payment, paymentUrl };
+  return { appointment, payment: appointment.payment, paymentUrl };
 };
 
 const bookAppointment = (
@@ -269,7 +295,7 @@ const getMyAppointments = async (user: IRequestUser) => {
     if (!patient) throw new AppError(StatusCodes.NOT_FOUND, "Patient profile not found");
     return prisma.appointment.findMany({
       where: { patientId: patient.id },
-      include: { doctor: true, schedule: true, payment: true, review: { select: { id: true, rating: true } }, prescription: { select: { id: true, pdfUrl: true } } },
+      include: { doctor: { select: doctorSummarySelect }, schedule: { select: scheduleSelect }, payment: { select: paymentSelect }, review: { select: { id: true, rating: true } }, prescription: { select: { id: true, pdfUrl: true } } },
       orderBy: { schedule: { startDateTime: "desc" } },
     });
   }
@@ -277,7 +303,7 @@ const getMyAppointments = async (user: IRequestUser) => {
   if (!doctor) throw new AppError(StatusCodes.NOT_FOUND, "Doctor profile not found");
   return prisma.appointment.findMany({
     where: { doctorId: doctor.id },
-    include: { patient: true, schedule: true, payment: true, review: { select: { id: true, rating: true } }, prescription: { select: { id: true, pdfUrl: true } } },
+    include: { patient: { select: patientSummarySelect }, schedule: { select: scheduleSelect }, payment: { select: paymentSelect }, review: { select: { id: true, rating: true } }, prescription: { select: { id: true, pdfUrl: true } } },
     orderBy: { schedule: { startDateTime: "desc" } },
   });
 };
@@ -289,7 +315,7 @@ const getMySingleAppointment = async (user: IRequestUser, appointmentId: string)
       : { id: appointmentId, doctor: { userId: user.userId } };
   const appointment = await prisma.appointment.findFirst({
     where,
-    include: { doctor: true, patient: true, schedule: true, payment: true },
+    include: { doctor: { select: doctorSummarySelect }, patient: { select: patientSummarySelect }, schedule: { select: scheduleSelect }, payment: { select: paymentSelect } },
   });
   // someone else's id looks exactly like a missing one
   if (!appointment) throw new AppError(StatusCodes.NOT_FOUND, "Appointment not found");
@@ -423,7 +449,7 @@ const changeAppointmentStatus = async (
   }
   return prisma.appointment.findUniqueOrThrow({
     where: { id: appointment.id },
-    include: { schedule: true, payment: true },
+    include: { schedule: { select: scheduleSelect }, payment: { select: paymentSelect } },
   });
 };
 

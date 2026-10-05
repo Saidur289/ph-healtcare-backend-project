@@ -1,3 +1,4 @@
+import { enqueueJob } from "../../utils/jobQueue";
 import Stripe from "stripe";
 import { envVars } from "../../config/env";
 import { uploadPrivateFile } from "../../config/privateFiles";
@@ -84,6 +85,8 @@ const handleCheckoutPaid = async (session: Stripe.Checkout.Session, eventId: str
         checkoutUrl: null,
       },
     });
+    // queued in the same transaction: a paid payment always gets its invoice job
+    await enqueueJob("invoice.deliver", { paymentId: payment.id }, { dedupeKey: `invoice:${payment.id}` }, tx);
     return true;
   });
 
@@ -110,7 +113,6 @@ const handleCheckoutPaid = async (session: Stripe.Checkout.Session, eventId: str
     return { message: `Late payment for appointment ${payment.appointmentId} refunded` };
   }
 
-  queueInvoice(payment.id);
   return { message: `Payment ${payment.id} marked as paid` };
 };
 
@@ -288,15 +290,6 @@ const generateAndSendInvoice = async (paymentId: string) => {
   });
 };
 
-// run after the webhook has answered; failures are retried by retryMissingInvoices()
-const queueInvoice = (paymentId: string) => {
-  setImmediate(() => {
-    generateAndSendInvoice(paymentId).catch((error) =>
-      console.error(`[invoice] payment ${paymentId} failed:`, error?.message),
-    );
-  });
-};
-
 // cron: paid payments that still have no invoice after 10 minutes
 const retryMissingInvoices = async () => {
   const pending = await prisma.payment.findMany({
@@ -308,10 +301,9 @@ const retryMissingInvoices = async () => {
     select: { id: true },
     take: 20,
   });
+  // queued once per payment (payments from before the queue existed, or lost deliveries)
   for (const { id } of pending) {
-    await generateAndSendInvoice(id).catch((error) =>
-      console.error(`[invoice] retry for payment ${id} failed:`, error?.message),
-    );
+    await enqueueJob("invoice.deliver", { paymentId: id }, { dedupeKey: `invoice:${id}` });
   }
   return pending.length;
 };

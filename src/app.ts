@@ -20,6 +20,8 @@ import { AppointmentService } from "./app/module/appointment/appointment.service
 import { AppointmentReminder } from "./app/module/appointment/appointment.reminder";
 import { PaymentService } from "./app/module/payment/payment.service";
 import { PrescriptionService } from "./app/module/prescription/prescription.service";
+// registers what each background job type does (the worker is started in server.ts)
+import "./app/jobs/handlers";
 
 const app = express();
 // behind a load balancer / reverse proxy set TRUST_PROXY to the number of hops (e.g. 1),

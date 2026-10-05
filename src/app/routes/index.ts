@@ -1,3 +1,4 @@
+import { invalidateCatalogOnWrite } from "../utils/responseCache";
 import { Router } from "express";
 import { SpecialtyRoutes } from "../module/specialty/specialty.route";
 import { AuthRoutes } from "../module/auth/auth.route";
@@ -16,6 +17,8 @@ import { PaymentRoutes } from "../module/payment/payment.route";
 import { FilesRoutes } from "../module/files/files.route";
 
 const router = Router();
+// clears the cached public doctor list / specialties after changes (utils/responseCache.ts)
+router.use(invalidateCatalogOnWrite);
 router.use("/specialties", SpecialtyRoutes);
 router.use("/auth", AuthRoutes);
 router.use("/users", UserRoutes);

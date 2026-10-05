@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:types": "tsc -p tsconfig.test.json",
-    "e2e:server": "tsx scripts/e2e-server.ts"
+    "e2e:server": "tsx scripts/e2e-server.ts",
+    "seed:dev": "tsx scripts/seed-dev.ts"
   },
   "keywords": [],
   "author": "",

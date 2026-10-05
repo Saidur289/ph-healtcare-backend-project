@@ -5,6 +5,7 @@ import { envVars } from "./app/config/env";
 import { prisma } from "./app/lib/prisma";
 import { logger } from "./app/lib/logger";
 import { seedSuperAdmin } from "./app/utils/seed";
+import { startJobWorker, stopJobWorker } from "./app/utils/jobQueue";
 
 let server: Server | undefined;
 let isShuttingDown = false;
@@ -24,6 +25,7 @@ const shutdown = async (reason: string, exitCode: number) => {
 
   try {
     cron.getTasks().forEach((task) => task.stop());
+    stopJobWorker();
     if (server) {
       await new Promise<void>((resolve) => server!.close(() => resolve()));
     }
@@ -42,6 +44,8 @@ const bootstrap = async () => {
     server = app.listen(envVars.PORT, () => {
       logger.info(`server is running on port ${envVars.PORT}`);
     });
+    // background jobs: PDFs, uploads, emails (utils/jobQueue.ts)
+    startJobWorker();
   } catch (error) {
     // fail loudly: a server without its super admin / DB should not keep running
     logger.fatal({ err: error }, "failed to start server");

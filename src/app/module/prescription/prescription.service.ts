@@ -1,3 +1,4 @@
+import { enqueueJob } from "../../utils/jobQueue";
 import { StatusCodes } from "http-status-codes";
 import { decryptJson, decryptText, encryptJson, encryptText } from "../../utils/fieldEncryption";
 import { envVars } from "../../config/env";
@@ -107,13 +108,13 @@ const deliverPrescription = async (prescriptionId: string, reason: "new" | "upda
   });
 };
 
-const queueDelivery = (prescriptionId: string, reason: "new" | "updated") => {
-  setImmediate(() => {
-    deliverPrescription(prescriptionId, reason).catch((error) =>
-      console.error(`[prescription] delivery of ${prescriptionId} failed:`, error?.message),
-    );
-  });
-};
+// PDF + upload + email run in the background job queue (utils/jobQueue.ts), with retries
+const queueDelivery = (prescriptionId: string, reason: "new" | "updated") =>
+  enqueueJob(
+    "prescription.deliver",
+    { prescriptionId, reason },
+    reason === "new" ? { dedupeKey: `prescription:${prescriptionId}:new` } : {},
+  );
 
 // cron: prescriptions whose PDF or email didn't go out within 10 minutes
 const retryPrescriptionDelivery = async () => {
@@ -126,11 +127,8 @@ const retryPrescriptionDelivery = async () => {
     select: { id: true },
     take: 20,
   });
-  for (const { id } of pending) {
-    await deliverPrescription(id, "new").catch((error) =>
-      console.error(`[prescription] retry for ${id} failed:`, error?.message),
-    );
-  }
+  // queued once per prescription (rows from before the queue existed, or lost deliveries)
+  for (const { id } of pending) await queueDelivery(id, "new");
   return pending.length;
 };
 
@@ -178,7 +176,7 @@ const givePrescription = async (user: IRequestUser, payload: ICreatePrescription
     }
     throw error;
   }
-  queueDelivery(prescription.id, "new");
+  await queueDelivery(prescription.id, "new");
   return decryptPrescription(prescription);
 };
 
@@ -204,7 +202,7 @@ const updatePrescription = async (
     },
     include: prescriptionInclude,
   });
-  queueDelivery(updated.id, "updated");
+  await queueDelivery(updated.id, "updated");
   return decryptPrescription(updated);
 };
 
@@ -278,4 +276,5 @@ export const PrescriptionService = {
   updatePrescription,
   deletePrescription,
   retryPrescriptionDelivery,
+  deliverPrescription,
 };

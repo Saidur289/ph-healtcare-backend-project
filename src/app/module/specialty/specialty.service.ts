@@ -1,3 +1,4 @@
+import { cached } from "../../utils/responseCache";
 import { StatusCodes } from "http-status-codes";
 import { audit } from "../../utils/audit";
 import { deleteFileFromCloudinary } from "../../config/cloudinary.config";
@@ -27,8 +28,11 @@ const createSpecialty = async (payload: TSpecialtyInput & { title: string }) => 
 }
 
 // deleted specialties are hidden everywhere
+// PUBLIC: cached for up to 60 s (cleared on every change, see utils/responseCache.ts)
 const getAllSpecialties = async () =>
-    prisma.specialty.findMany({ where: { isDeleted: false }, orderBy: { title: "asc" }, include: withDoctorCount });
+    cached("specialties:all", () =>
+        prisma.specialty.findMany({ where: { isDeleted: false }, orderBy: { title: "asc" }, include: withDoctorCount }),
+    );
 
 const updateSpecialty = async (id: string, payload: TSpecialtyInput) => {
     const current = await prisma.specialty.findFirst({ where: { id, isDeleted: false } });

@@ -8,6 +8,8 @@ import { AppointmentReminder } from "../src/app/module/appointment/appointment.r
 import { AppointmentStatus, PaymentStatus } from "../src/generated/prisma/enums";
 import { createAppointment, createDoctor, createPatient, createSlot } from "./helpers/factories";
 import { outbox, stripeMocks } from "./helpers/mocks";
+import { runDueJobs } from "../src/app/utils/jobQueue";
+import "../src/app/jobs/handlers";
 
 const MIN = 60_000;
 const past = () => new Date(Date.now() - MIN);
@@ -90,9 +92,13 @@ describe("reminders", () => {
     outbox.length = 0;
 
     expect(await AppointmentReminder.sendReminders("24h")).toBe(1);
+    // the emails go out through the job queue
+    expect(outbox).toHaveLength(0);
+    expect(await runDueJobs()).toEqual({ done: 2, retry: 0, failed: 0 });
     expect(outbox.map((m) => m.to).sort()).toEqual([patient.email, doctor.email].sort());
     // the next run sends nothing again
     expect(await AppointmentReminder.sendReminders("24h")).toBe(0);
+    await runDueJobs();
     expect(outbox).toHaveLength(2);
   });
 

@@ -1,3 +1,4 @@
+import { publicCacheHeaders } from "../../utils/responseCache";
 import { Router } from "express";
 import { SpecialtyController } from "./specialty.controller";
 import { validateRequest } from "../../middleware/validateRequest";
@@ -8,7 +9,7 @@ import { Role } from "../../../generated/prisma/enums";
 
 const router = Router()
 router.post('/', checkAuth(Role.ADMIN, Role.SUPER_ADMIN), multerUpload.single("file"), validateRequest(SpecialtyValidation.createSpecialtyZodSchema), SpecialtyController.createSpecialty)
-router.get("/", SpecialtyController.getAllSpecialties)
+router.get("/", publicCacheHeaders, SpecialtyController.getAllSpecialties)
 router.patch("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), multerUpload.single("file"), validateRequest(SpecialtyValidation.updateSpecialtyZodSchema), SpecialtyController.updateSpecialty)
 router.delete("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), SpecialtyController.deleteSpecialty)
 export const SpecialtyRoutes = router

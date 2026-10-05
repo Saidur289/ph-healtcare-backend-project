@@ -41,8 +41,10 @@ model Appointment {
     // only ONE active (not cancelled) appointment per doctor slot - enforced by the database
     @@unique([doctorId, scheduleId], map: "appointment_active_slot", where: { status: { not: "CANCELED" } })
     @@unique([patientId, idempotencyKey])
-    @@index([patientId])
-    @@index([doctorId])
+    // "my appointments", overlap check and unpaid-limit count filter by patient + status
+    @@index([patientId, status])
+    // doctor lists and stats filter by doctor + status
+    @@index([doctorId, status])
     @@index([scheduleId])
     @@index([status])
     @@index([status, paymentStatus, paymentDeadline])

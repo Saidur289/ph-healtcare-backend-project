@@ -1,0 +1,26 @@
+// Background jobs (PDFs, uploads, emails) run outside requests, with retries (src/app/utils/jobQueue.ts).
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Job {
+  id          String    @id @default(uuid(7))
+  type        String    @db.VarChar(50)
+  payload     Json
+  // the same work is never queued twice (e.g. "invoice:<paymentId>")
+  dedupeKey   String?   @unique @db.VarChar(200)
+  status      JobStatus @default(PENDING)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAt       DateTime  @default(now())
+  lockedAt    DateTime?
+  lastError   String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+  @@map("jobs")
+}

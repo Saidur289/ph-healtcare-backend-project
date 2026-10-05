@@ -1,3 +1,4 @@
+import { cached, queryKey } from "../../utils/responseCache";
 import { StatusCodes } from "http-status-codes";
 import { audit } from "../../utils/audit";
 import AppError from "../../errorHelpers/AppError";
@@ -21,7 +22,9 @@ import { Role, UserStatus } from "../../../generated/prisma/enums";
 import { IRequestUser } from "../../interface/requestUser.interface";
 
 // PUBLIC: fixed safe columns only. ?include= and ?fields= are ignored on purpose.
-const getAllDoctors = async (query: IQueryParams) => {
+// PUBLIC list: cached for up to 60 s (cleared on every change, see utils/responseCache.ts)
+const getAllDoctors = (query: IQueryParams) => cached(queryKey("doctors", query), () => loadPublicDoctors(query));
+const loadPublicDoctors = async (query: IQueryParams) => {
   const queryBuilder = new QueryBuilder<
     Doctor,
     Prisma.DoctorWhereInput,
@@ -37,7 +40,8 @@ const getAllDoctors = async (query: IQueryParams) => {
     .select(doctorPublicSelect)
     .sort()
     .paginate()
-    .where({ isDeleted: false })
+    // blocked / deleted doctor accounts are not listed (they can't be booked either)
+    .where({ isDeleted: false, user: { status: UserStatus.ACTIVE, isDeleted: false } })
     .execute();
   return result;
 };

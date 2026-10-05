@@ -1,6 +1,6 @@
 import { AppointmentStatus, PaymentStatus } from "../../../generated/prisma/enums";
 import { prisma } from "../../lib/prisma";
-import { sendEmail } from "../../utils/email";
+import { enqueueJob } from "../../utils/jobQueue";
 import { DEFAULT_CLINIC_TIME_ZONE, minutes } from "./appointment.constant";
 
 const formatInZone = (date: Date) =>
@@ -55,24 +55,27 @@ const sendReminders = async (kind: TReminderKind) => {
       isPaid: appointment.paymentStatus === PaymentStatus.PAID,
       paymentDeadline: appointment.paymentDeadline ? formatInZone(appointment.paymentDeadline) : "",
     };
-    const emails = [
-      sendEmail({
+    // sent by the job queue, with retries
+    await enqueueJob(
+      "email.send",
+      {
         to: appointment.patient.email,
         subject: `Reminder: your appointment with Dr. ${appointment.doctor.name}`,
         templateName: "reminder",
         templateData: { ...common, role: "PATIENT", name: appointment.patient.name, otherName: appointment.doctor.name },
-      }),
-      sendEmail({
+      },
+      { dedupeKey: `reminder:${appointment.id}:${kind}:patient` },
+    );
+    await enqueueJob(
+      "email.send",
+      {
         to: appointment.doctor.email,
         subject: `Reminder: appointment with ${appointment.patient.name}`,
         templateName: "reminder",
         templateData: { ...common, role: "DOCTOR", name: appointment.doctor.name, otherName: appointment.patient.name },
-      }),
-    ];
-    const results = await Promise.allSettled(emails);
-    results.forEach((result) => {
-      if (result.status === "rejected") console.error("Reminder email failed:", result.reason?.message);
-    });
+      },
+      { dedupeKey: `reminder:${appointment.id}:${kind}:doctor` },
+    );
     sent++;
   }
   return sent;

@@ -1,3 +1,4 @@
+import { publicCacheHeaders } from "../../utils/responseCache";
 import { Router } from "express";
 import { DoctorController } from "./doctor.controller";
 import { checkAuth } from "../../middleware/checkAuth";
@@ -25,7 +26,7 @@ router.patch(
   DoctorController.setMyAvailability,
 );
 // public (safe fields only)
-router.get("/", DoctorController.getAllDoctors);
+router.get("/", publicCacheHeaders, DoctorController.getAllDoctors);
 router.get("/:id", DoctorController.getDoctorById);
 router.get("/:id/available-slots", DoctorController.getAvailableSlots);
 router.patch(

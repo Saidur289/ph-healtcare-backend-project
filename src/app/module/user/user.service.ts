@@ -8,18 +8,10 @@ import { StatusCodes } from "http-status-codes";
 
 
 const createDoctor = async (payload: ICreateDoctorPayload) => {
-    const specialties: Specialty[] = []
-    for (const specialtiesId of payload.specialties) {
-        const specialty = await prisma.specialty.findUnique({
-            where: {
-                id: specialtiesId
-            }
-        });
-        if (specialty) {
-            specialties.push(specialty);
-        }
-
-    }
+    // one query for all chosen specialties (unknown ids are skipped, as before)
+    const specialties: Specialty[] = await prisma.specialty.findMany({
+        where: { id: { in: payload.specialties } },
+    });
     const userExists = await prisma.user.findUnique({
         where: {
             email: payload.doctor.email

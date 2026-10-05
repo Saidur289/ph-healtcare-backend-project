@@ -94,6 +94,10 @@ describe("checkout.session.completed", () => {
     expect(after.payment?.status).toBe(PaymentStatus.PAID);
     expect(after.payment?.stripePaymentIntentId).toBe(session.payment_intent);
     expect(after.payment?.paidAt).not.toBeNull();
+    // the invoice job was queued in the same transaction (once)
+    const job = await prisma.job.findUniqueOrThrow({ where: { dedupeKey: `invoice:${payment.id}` } });
+    expect(job.type).toBe("invoice.deliver");
+    expect(job.status).toBe("PENDING");
   });
 
   it("processes a duplicate event only once", async () => {

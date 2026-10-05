@@ -30,6 +30,7 @@ Recorded: logins and failed logins, logouts, password changes and resets, role a
 | Stripe webhook event ids | 90 days | deleted automatically |
 | Audit log | 6 years | deleted automatically |
 | Accounts that never verified their email and have no appointments | 30 days | deleted automatically |
+| Background jobs (`jobs`: invoice / prescription delivery, reminder emails; payloads can hold email addresses) | 7 days after they ran, 30 days if they failed | deleted automatically |
 | Appointments, prescriptions, payments, invoices | At least 10 years (medical and financial records) | Reviewed by an admin; not deleted automatically |
 | Medical reports uploaded by patients | Until the patient deletes them or their account | deleted with the account |
 | Request logs (pino output) | Set by the log platform: keep 30 days | rotate / delete |

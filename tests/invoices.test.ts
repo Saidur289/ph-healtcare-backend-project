@@ -8,6 +8,7 @@ import { PaymentStatus } from "../src/generated/prisma/enums";
 import { createAdmin, createAppointment, createDoctor, createPatient, createSlot } from "./helpers/factories";
 import { API, api, login } from "./helpers/http";
 import { outbox, stripeState } from "./helpers/mocks";
+import { runDueJobs } from "../src/app/utils/jobQueue";
 
 vi.mock("../src/app/config/privateFiles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/app/config/privateFiles")>()),
@@ -80,6 +81,9 @@ describe("invoices", () => {
     const old = await paidPayment({ paidMinutesAgo: 20 });
     const recent = await paidPayment();
     expect(await PaymentService.retryMissingInvoices()).toBeGreaterThanOrEqual(1);
+    // it queues the work; the job worker does it
+    expect(await prisma.job.count({ where: { dedupeKey: `invoice:${old.payment.id}` } })).toBe(1);
+    await runDueJobs(50);
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: old.payment.id } })).invoiceNumber).toBeTruthy();
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: recent.payment.id } })).invoiceNumber).toBeNull();
   });
