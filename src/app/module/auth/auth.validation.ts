@@ -67,6 +67,11 @@ const emailOnlyZodSchema = z.strictObject({
   email: emailSchema,
 });
 
+// the single-use code from the Google sign-in handoff (32 random bytes, base64url)
+const googleExchangeZodSchema = z.strictObject({
+  code: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "Invalid code"),
+});
+
 const resetPasswordZodSchema = z.strictObject({
   email: emailSchema,
   otp: otpSchema,
@@ -90,4 +95,5 @@ export const AuthValidation = {
   emailOnlyZodSchema,
   resetPasswordZodSchema,
   changePasswordZodSchema,
+  googleExchangeZodSchema,
 };

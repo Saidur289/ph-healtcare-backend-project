@@ -156,14 +156,28 @@ const googleLoginSuccess = catchAsync(async (req: Request, res: Response) => {
   if (!session?.user) {
     return redirectToLoginWithError(res, "no-user-found");
   }
+  let code: string;
   try {
-    const tokens = await AuthService.googleLoginSuccess(session);
-    TokenUtils.setAuthCookies(res, tokens);
+    code = await AuthService.googleLoginSuccess(session);
   } catch {
     TokenUtils.clearAuthCookies(res);
     return redirectToLoginWithError(res, "account-unavailable");
   }
-  res.redirect(`${envVars.FRONTEND_URL}${redirectPath}`);
+  // the frontend trades the code for its own cookies (see exchangeGoogleCode)
+  const params = new URLSearchParams({ code, redirect: redirectPath });
+  res.redirect(`${envVars.FRONTEND_URL}/auth/google/callback?${params.toString()}`);
+});
+
+// POST { code } from the Next.js server -> auth cookies (Set-Cookie) + the user, like /auth/login
+const exchangeGoogleCode = catchAsync(async (req: Request, res: Response) => {
+  const { user, tokens } = await AuthService.exchangeGoogleCode(req.body.code);
+  TokenUtils.setAuthCookies(res, tokens);
+  sendResponse(res, {
+    httpStatusCode: StatusCodes.OK,
+    success: true,
+    message: "User login successfully",
+    data: { user },
+  });
 });
 
 const handleOauthError = catchAsync(async (req: Request, res: Response) => {
@@ -184,5 +198,6 @@ export const AuthController = {
   resetPassword,
   googleLogin,
   googleLoginSuccess,
+  exchangeGoogleCode,
   handleOauthError,
 };

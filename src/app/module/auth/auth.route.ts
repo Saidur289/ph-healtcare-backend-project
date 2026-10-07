@@ -20,5 +20,7 @@ router.post("/forget-password", authPerIpLimiter, passwordResetLimiter, validate
 router.post("/reset-password", authPerIpLimiter, passwordResetLimiter, validateRequest(AuthValidation.resetPasswordZodSchema), AuthController.resetPassword);
 router.get("/login/google", AuthController.googleLogin);
 router.get("/google/success", AuthController.googleLoginSuccess);
+// called by the Next.js server after Google sign-in (the code is single use and lives 60 s)
+router.post("/google/exchange", authPerIpLimiter, validateRequest(AuthValidation.googleExchangeZodSchema), AuthController.exchangeGoogleCode);
 router.get("/oauth/error", AuthController.handleOauthError);
 export const AuthRoutes = router;

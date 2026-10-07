@@ -74,6 +74,10 @@ whole history (gitleaks; fake test values are allowed in `.gitleaks.toml`). The 
 end-to-end tests. To **block merging** when CI fails: GitHub → Settings → Branches → add a rule for
 the main branch → "Require status checks to pass" → select the `ci` jobs.
 
+## Staging on Render + Vercel
+
+Step by step: [deploy-staging.md](deploy-staging.md) (`render.yaml` in this repo, `vercel.json` in the client).
+
 ## Still to set up on the hosting side
 
 - **13.7 Environments:** dev / staging / production, each with its own database (a Neon branch or

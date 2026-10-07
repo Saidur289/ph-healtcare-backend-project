@@ -31,6 +31,7 @@ const MATRIX: Record<string, TRow[]> = {
     { method: "post", path: "/auth/reset-password", access: "PUBLIC" },
     { method: "get", path: "/auth/login/google", access: "PUBLIC", skipCall: "redirects to Google" },
     { method: "get", path: "/auth/google/success", access: "PUBLIC", skipCall: "Google callback" },
+    { method: "post", path: "/auth/google/exchange", access: "PUBLIC" },
     { method: "get", path: "/auth/oauth/error", access: "PUBLIC", skipCall: "Google callback" },
   ],
   user: [

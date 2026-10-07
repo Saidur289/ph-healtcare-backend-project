@@ -1,3 +1,4 @@
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { StatusCodes } from "http-status-codes";
 import { audit } from "../../utils/audit";
 import { APIError } from "better-auth/api";
@@ -431,7 +432,39 @@ const googleLoginSuccess = async (session: Record<string, any>) => {
       },
     });
   }
-  return issueTokensForSession(user, session.session.token);
+  // the frontend lives on another domain (e.g. *.vercel.app vs *.onrender.com), so cookies set here
+  // would not reach it: hand over a single-use code instead, which the Next.js app exchanges
+  // server to server (exchangeGoogleCode) and then sets the cookies on its own domain
+  const code = randomBytes(32).toString("base64url");
+  await prisma.verification.create({
+    data: {
+      id: randomUUID(),
+      identifier: googleHandoffId(code),
+      value: session.session.token,
+      expiresAt: new Date(Date.now() + GOOGLE_HANDOFF_TTL_MS),
+    },
+  });
+  return code;
+};
+
+const GOOGLE_HANDOFF_TTL_MS = 60 * 1000;
+// only a hash of the code is stored
+const googleHandoffId = (code: string) => `google-handoff:${createHash("sha256").update(code).digest("hex")}`;
+
+// single use: the row is deleted by whoever reads it first; expired, reused or unknown codes get 401
+const exchangeGoogleCode = async (code: string) => {
+  const invalid = new AppError(StatusCodes.UNAUTHORIZED, "This sign-in link has expired. Please try again.");
+  const row = await prisma.verification.findFirst({ where: { identifier: googleHandoffId(code) } });
+  if (!row) throw invalid;
+  const { count } = await prisma.verification.deleteMany({ where: { id: row.id } });
+  if (count === 0 || row.expiresAt.getTime() < Date.now()) throw invalid;
+
+  const session = await prisma.session.findUnique({ where: { token: row.value }, include: { user: true } });
+  if (!session || session.expiresAt.getTime() < Date.now()) throw invalid;
+  assertAccountUsable(session.user);
+  const tokens = await issueTokensForSession(session.user, row.value);
+  await audit({ action: "auth.login", actor: { userId: session.user.id, role: session.user.role }, entityType: "User", entityId: session.user.id, meta: { provider: "google" } });
+  return { user: toSafeUser(session.user), tokens };
 };
 
 export const AuthService = {
@@ -446,4 +479,5 @@ export const AuthService = {
   forgetPassword,
   resetPassword,
   googleLoginSuccess,
+  exchangeGoogleCode,
 };

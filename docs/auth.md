@@ -49,5 +49,7 @@ admin/doctor deleted · refresh-token reuse detected.
 ## Known limits (see plan.md)
 
 - Attempt counters live in memory: use Redis when running more than one server (9.2).
-- Google login sets cookies on the API's domain. This works on `localhost`; in production the API and
-  the frontend need a shared parent domain, or the Google callback must go through the Next.js app.
+- Google login works across domains: the API finishes the sign-in on its own domain, then redirects to
+  `<frontend>/auth/google/callback?code=…` with a single-use, 60-second code (only its SHA-256 hash is
+  stored, in `verification`). The Next.js route exchanges it server to server at
+  `POST /api/v1/auth/google/exchange` and sets the auth cookies on the frontend's domain.

@@ -44,6 +44,7 @@ const main = async () => {
   const { seedSuperAdmin } = await import("../src/app/utils/seed");
   const { prisma } = await import("../src/app/lib/prisma");
   const { auth } = await import("../src/app/lib/auth");
+  const { AuthService } = await import("../src/app/module/auth/auth.service");
   // fixtures write straight to the database, past the API: clear the public list cache after them
   const { clearResponseCache } = await import("../src/app/utils/responseCache");
   await seedSuperAdmin();
@@ -183,6 +184,13 @@ const main = async () => {
         const schedule = await prisma.schedule.create({ data: { startDateTime: start, endDateTime: new Date(start.getTime() + 30 * 60_000) } });
         await prisma.doctorSchedules.create({ data: { doctorId: doctor.id, scheduleId: schedule.id } });
         return json(res, 200, { doctorId: doctor.id, scheduleId: schedule.id, doctorName: doctor.name });
+      }
+      if (route === "POST /__e2e/fixtures/google-code") {
+        // what a finished Google sign-in leaves behind: a better-auth session and a handoff code
+        const patientUser = await createUser("PATIENT", "E2E Google Patient");
+        const { token } = await auth.api.signInEmail({ body: { email: patientUser.email, password: patientUser.password } });
+        const code = await AuthService.googleLoginSuccess({ user: { id: patientUser.userId }, session: { token } });
+        return json(res, 200, { code, email: patientUser.email });
       }
       if (route === "POST /__e2e/fixtures/specialty") {
         const title = `E2E Specialty ${randomUUID().slice(0, 6)}`;
