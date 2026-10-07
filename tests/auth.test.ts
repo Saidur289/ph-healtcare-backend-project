@@ -76,6 +76,18 @@ describe("login", () => {
     // even the right password is refused while locked
     const locked = await api().post(`${API}/auth/login`).send({ email: patient.email, password: TEST_PASSWORD });
     expect(locked.status).toBe(429);
+
+    // the owner is told once, through the job queue (3.11)
+    const jobs = await prisma.job.findMany({ where: { type: "email.send", dedupeKey: { startsWith: `account-locked:${patient.user.id}:` } } });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].payload).toMatchObject({ to: patient.email, templateName: "accountLocked", templateData: { minutes: 15 } });
+  });
+
+  it("does not queue a locked-account email for an address that has no account", async () => {
+    const email = uniqueEmail("nobody");
+    for (let i = 0; i < 5; i++) await api().post(`${API}/auth/login`).send({ email, password: "Wrong#Password9" });
+    const jobs = await prisma.job.findMany({ where: { type: "email.send" } });
+    expect(jobs.some((job) => (job.payload as { to?: string }).to === email)).toBe(false);
   });
 
   it("rejects a blocked user and leaves no session behind", async () => {

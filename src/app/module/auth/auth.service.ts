@@ -19,6 +19,7 @@ import {
 } from "./auth.interface";
 import { IRequestUser } from "../../interface/requestUser.interface";
 import { loginLimiter, otpResendLimiter } from "../../utils/attemptLimiter";
+import { enqueueJob } from "../../utils/jobQueue";
 
 // a session can be extended by refreshes, but never beyond this age
 const SESSION_ABSOLUTE_MAX_MS = 30 * 24 * 60 * 60 * 1000;
@@ -148,8 +149,21 @@ const loginUser = async (payload: ILoginUserPayload) => {
     if (error instanceof APIError && error.statusCode === StatusCodes.UNAUTHORIZED) {
       const locked = loginLimiter.fail(email);
       // the user id if the account exists (the email itself is not logged)
-      const known = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
+      const known = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, name: true } });
       await audit({ action: "auth.login_failed", actor: known ? { userId: known.id, role: known.role } : null, entityType: "User", entityId: known?.id, meta: { locked } });
+      if (locked && known) {
+        // tell the owner (plan.md 3.11); one email per lock, sent by the job queue with retries
+        await enqueueJob(
+          "email.send",
+          {
+            to: email,
+            subject: "Logins to your account are paused for 15 minutes",
+            templateName: "accountLocked",
+            templateData: { name: known.name, minutes: 15, resetUrl: `${envVars.FRONTEND_URL}/forgot-password` },
+          },
+          { dedupeKey: `account-locked:${known.id}:${Math.floor(Date.now() / (15 * 60 * 1000))}` },
+        );
+      }
       throw new AppError(
         locked ? StatusCodes.TOO_MANY_REQUESTS : StatusCodes.UNAUTHORIZED,
         locked
